@@ -34,6 +34,7 @@ type SkillRef struct {
 type RegistryRef struct {
 	Name  string            `yaml:"name"`
 	URL   string            `yaml:"url"`
+	Ref   string            `yaml:"ref"`
 	Paths map[string]string `yaml:"paths,omitempty"` // e.g. {"skills": "skills/", "prompts": "prompts/"}
 }
 
@@ -88,6 +89,11 @@ func (m *Manifest) Validate() error {
 	for _, t := range m.Targets {
 		if !isValidTarget(t) {
 			return fmt.Errorf("invalid target: %s", t)
+		}
+	}
+	for _, r := range m.Registries {
+		if r.Ref == "" {
+			return fmt.Errorf("registry %q must specify a ref (use \"latest\" to track the default branch)", r.Name)
 		}
 	}
 	return nil

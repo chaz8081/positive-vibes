@@ -12,6 +12,7 @@ import (
 const exampleYAML = `registries:
   - name: awesome-copilot
     url: https://github.com/github/awesome-copilot
+    ref: latest
 
 skills:
   - name: conventional-commits
@@ -92,6 +93,58 @@ func TestValidate_InvalidTarget(t *testing.T) {
 	err := m.Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid target")
+}
+
+func TestValidate_RegistryMissingRef(t *testing.T) {
+	m := &Manifest{
+		Registries: []RegistryRef{{Name: "r", URL: "https://example.com"}},
+		Skills:     []SkillRef{{Name: "x"}},
+		Targets:    []string{"opencode"},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ref")
+}
+
+func TestValidate_RegistryWithRef(t *testing.T) {
+	m := &Manifest{
+		Registries: []RegistryRef{{Name: "r", URL: "https://example.com", Ref: "latest"}},
+		Skills:     []SkillRef{{Name: "x"}},
+		Targets:    []string{"opencode"},
+	}
+	err := m.Validate()
+	require.NoError(t, err)
+}
+
+func TestLoadManifest_RefField(t *testing.T) {
+	yamlStr := `registries:
+  - name: pinned
+    url: https://example.com/repo
+    ref: v1.2.0
+skills:
+  - name: s
+targets:
+  - opencode
+`
+	m, err := LoadManifestFromBytes([]byte(yamlStr))
+	require.NoError(t, err)
+	assert.Equal(t, "v1.2.0", m.Registries[0].Ref)
+}
+
+func TestSaveManifest_RefFieldRoundTrip(t *testing.T) {
+	m := &Manifest{
+		Registries: []RegistryRef{{Name: "r", URL: "https://r", Ref: "abc123"}},
+		Skills:     []SkillRef{{Name: "s"}},
+		Targets:    []string{"opencode"},
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "vibes.yml")
+
+	require.NoError(t, SaveManifest(m, p))
+
+	m2, err := LoadManifest(p)
+	require.NoError(t, err)
+	assert.Equal(t, "abc123", m2.Registries[0].Ref)
 }
 
 func TestValidate_Valid(t *testing.T) {
