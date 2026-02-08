@@ -5,9 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/chaz8081/positive-vibes/pkg/schema"
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
 // GitRegistry fetches skills from a remote (or local) git repository.
@@ -22,6 +25,24 @@ type GitRegistry struct {
 
 func (r *GitRegistry) Name() string { return r.RegistryName }
 
+// authMethod returns the appropriate transport.AuthMethod for the URL.
+// For SSH URLs (git@... or ssh://...), it attempts to use the system SSH agent.
+// For HTTPS or local paths, no auth is needed.
+func (r *GitRegistry) authMethod() transport.AuthMethod {
+	if isSSHURL(r.URL) {
+		auth, err := gitssh.NewSSHAgentAuth("git")
+		if err == nil {
+			return auth
+		}
+	}
+	return nil
+}
+
+// isSSHURL returns true if the URL looks like an SSH git URL.
+func isSSHURL(url string) bool {
+	return strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://")
+}
+
 // ensureCache clones the repository into CachePath if it does not already exist.
 // If the clone fails but a cached copy already exists, it silently returns nil
 // so callers can continue with stale data.
@@ -32,7 +53,8 @@ func (r *GitRegistry) ensureCache() error {
 	}
 
 	_, err := git.PlainClone(r.CachePath, false, &git.CloneOptions{
-		URL: r.URL,
+		URL:  r.URL,
+		Auth: r.authMethod(),
 	})
 	if err != nil {
 		// If we somehow have a partial cache, allow fallback.
@@ -119,7 +141,9 @@ func (r *GitRegistry) Refresh() error {
 		return fmt.Errorf("worktree: %w", err)
 	}
 
-	err = wt.Pull(&git.PullOptions{})
+	err = wt.Pull(&git.PullOptions{
+		Auth: r.authMethod(),
+	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("git pull: %w", err)
 	}

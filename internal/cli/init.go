@@ -42,7 +42,11 @@ var initCmd = &cobra.Command{
 			m.Targets = append(m.Targets, t)
 		}
 		// add default registry
-		m.Registries = []manifest.RegistryRef{{Name: "awesome-copilot", URL: "https://github.com/github/awesome-copilot"}}
+		m.Registries = []manifest.RegistryRef{{
+			Name:  "awesome-copilot",
+			URL:   "https://github.com/github/awesome-copilot",
+			Paths: map[string]string{"skills": "skills/"},
+		}}
 
 		if err := manifest.SaveManifest(m, manifestPath); err != nil {
 			fmt.Printf("error writing vibes.yaml: %v\n", err)

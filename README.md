@@ -44,6 +44,8 @@ This reads your `vibes.yaml` and installs skills into all your target tools' dir
 registries:
   - name: awesome-copilot
     url: https://github.com/github/awesome-copilot
+    paths:
+      skills: skills/
 
 skills:
   - name: conventional-commits
@@ -70,11 +72,12 @@ targets:
 | `vibes apply` | Sync skills to all target tool directories |
 | `vibes apply --force` | Overwrite existing skills |
 | `vibes apply --link` | Use symlinks instead of copies |
+| `vibes apply --refresh` | Pull latest from git registries before applying |
 | `vibes generate <desc>` | Generate a custom skill from a description |
 
 ## How Skills Work
 
-A skill follows the [Agent Skills open standard](https://github.com/github/copilot-skills). Each skill is a directory containing a `SKILL.md` with YAML frontmatter:
+A skill follows the [Agent Skills open standard](https://agentskills.io/specification). Each skill is a directory containing a `SKILL.md` with YAML frontmatter:
 
 ```markdown
 ---
