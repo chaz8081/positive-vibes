@@ -11,11 +11,30 @@ import (
 	"github.com/chaz8081/positive-vibes/pkg/schema"
 )
 
+// ApplyOpStatus represents the outcome of a single skill-target operation.
+type ApplyOpStatus string
+
+const (
+	OpInstalled ApplyOpStatus = "installed"
+	OpSkipped   ApplyOpStatus = "skipped"
+	OpError     ApplyOpStatus = "error"
+	OpNotFound  ApplyOpStatus = "not_found"
+)
+
+// ApplyOp records the result of installing one skill to one target.
+type ApplyOp struct {
+	SkillName  string
+	TargetName string
+	Status     ApplyOpStatus
+	Error      string
+}
+
 // ApplyResult summarizes installation results.
 type ApplyResult struct {
 	Installed int
 	Skipped   int
 	Errors    []string
+	Ops       []ApplyOp
 }
 
 type Applier struct {
@@ -79,6 +98,11 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 
 		if sk == nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("skill not found: %s", s.Name))
+			res.Ops = append(res.Ops, ApplyOp{
+				SkillName: s.Name,
+				Status:    OpNotFound,
+				Error:     fmt.Sprintf("skill not found: %s", s.Name),
+			})
 			continue
 		}
 
@@ -87,13 +111,30 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 			if t.SkillExists(sk.Name, filepath.Dir(manifestPath)) {
 				if !opts.Force {
 					res.Skipped++
+					res.Ops = append(res.Ops, ApplyOp{
+						SkillName:  sk.Name,
+						TargetName: t.Name(),
+						Status:     OpSkipped,
+					})
 					continue
 				}
 			}
 			if err := t.Install(sk, srcDir, filepath.Dir(manifestPath), opts); err != nil {
-				res.Errors = append(res.Errors, fmt.Sprintf("install %s -> %s: %v", sk.Name, t.Name(), err))
+				errMsg := fmt.Sprintf("install %s -> %s: %v", sk.Name, t.Name(), err)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  sk.Name,
+					TargetName: t.Name(),
+					Status:     OpError,
+					Error:      errMsg,
+				})
 			} else {
 				res.Installed++
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  sk.Name,
+					TargetName: t.Name(),
+					Status:     OpInstalled,
+				})
 			}
 		}
 	}

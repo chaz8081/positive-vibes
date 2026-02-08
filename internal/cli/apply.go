@@ -41,45 +41,38 @@ var applyCmd = &cobra.Command{
 		opts := target.InstallOpts{Force: applyForce, Link: applyLink}
 
 		fmt.Println("🧘 Aligning your AI tools...")
+		fmt.Println()
 		res, err := applier.Apply(manifestPath, opts)
 		if err != nil {
 			fmt.Printf("error: %v\n", err)
 			return
 		}
 
-		// Print individual results are available via res.Errors and counts
-		if len(res.Errors) > 0 {
-			for _, e := range res.Errors {
-				fmt.Printf("⚠️  %s\n", e)
+		// Print per-operation lines
+		for _, op := range res.Ops {
+			switch op.Status {
+			case engine.OpInstalled:
+				fmt.Printf("  ✅ %s -> %s\n", op.SkillName, op.TargetName)
+			case engine.OpSkipped:
+				fmt.Printf("  ⏭️  %s -> %s (already exists)\n", op.SkillName, op.TargetName)
+			case engine.OpNotFound:
+				fmt.Printf("  ⚠️  %s (not found)\n", op.SkillName)
+			case engine.OpError:
+				fmt.Printf("  ❌ %s -> %s: %s\n", op.SkillName, op.TargetName, op.Error)
 			}
 		}
 
-		// try to read manifest to count targets
-		tgtCount := 0
-		if m, err := manifest.LoadManifest(manifestPath); err == nil {
-			tgtCount = len(m.Targets)
+		// Summary line
+		fmt.Println()
+		if res.Installed > 0 {
+			fmt.Printf("✨ Vibe check passed! Installed %d, skipped %d, errors %d.\n", res.Installed, res.Skipped, len(res.Errors))
+			fmt.Println("🎵 Your tools are in harmony.")
+		} else if res.Skipped > 0 {
+			fmt.Printf("😎 Already in sync! %d skills up to date. Use --force to reinstall.\n", res.Skipped)
+		} else {
+			fmt.Println("🤔 Nothing to install. Check your vibes.yaml.")
 		}
-
-		fmt.Printf("\n✨ Vibe check passed! Installed %d skills across %d targets.\n", res.Installed, tgtCount)
-		fmt.Println("🎵 Your tools are in harmony.")
 	},
-}
-
-// osStat is a tiny wrapper to avoid importing os in top-level var section
-func osStat(p string) (bool, error) {
-	if _, err := osStatImpl(p); err == nil {
-		return true, nil
-	} else {
-		return false, err
-	}
-}
-
-func osStatImpl(p string) (bool, error) { // actual os.Stat usage
-	_, err := os.Stat(p)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func init() {
