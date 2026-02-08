@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/chaz8081/positive-vibes/pkg/schema"
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
@@ -21,6 +23,19 @@ type GitRegistry struct {
 	URL          string
 	CachePath    string // directory to clone into; e.g., ~/.positive-vibes/cache/<name>/
 	SkillsPath   string // subdirectory inside the repo where skills live; defaults to "."
+	Ref          string // "latest", branch name, tag name, or commit SHA
+}
+
+const RefLatest = "latest"
+
+var shaPattern = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
+
+func isSHA(ref string) bool {
+	return shaPattern.MatchString(ref)
+}
+
+func (r *GitRegistry) isPinned() bool {
+	return r.Ref != "" && r.Ref != RefLatest
 }
 
 func (r *GitRegistry) Name() string { return r.RegistryName }
@@ -52,17 +67,66 @@ func (r *GitRegistry) ensureCache() error {
 		return nil
 	}
 
-	_, err := git.PlainClone(r.CachePath, false, &git.CloneOptions{
+	cloneOpts := &git.CloneOptions{
 		URL:  r.URL,
 		Auth: r.authMethod(),
-	})
-	if err != nil {
-		// If we somehow have a partial cache, allow fallback.
-		if _, statErr := os.Stat(r.CachePath); statErr == nil {
-			return nil
-		}
-		return fmt.Errorf("git clone %s: %w", r.URL, err)
 	}
+
+	var repo *git.Repository
+	var err error
+
+	// For non-SHA pinned refs, attempt branch clone first (single-branch), then tag.
+	if r.isPinned() && !isSHA(r.Ref) {
+		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(r.Ref)
+		cloneOpts.SingleBranch = true
+	}
+
+	repo, err = git.PlainClone(r.CachePath, false, cloneOpts)
+	if err != nil {
+		if r.isPinned() && !isSHA(r.Ref) {
+			// try tag
+			_ = os.RemoveAll(r.CachePath)
+			cloneOpts.ReferenceName = plumbing.NewTagReferenceName(r.Ref)
+			cloneOpts.SingleBranch = true
+			repo, err = git.PlainClone(r.CachePath, false, cloneOpts)
+		}
+		if err != nil {
+			// If we somehow have a partial cache, allow fallback.
+			if _, statErr := os.Stat(r.CachePath); statErr == nil {
+				return nil
+			}
+			return fmt.Errorf("git clone %s: %w", r.URL, err)
+		}
+	}
+
+	// If pinned to a commit SHA, checkout that hash.
+	if r.isPinned() && isSHA(r.Ref) {
+		// Ensure repo is cloned (full clone)
+		if repo == nil {
+			repo, err = git.PlainClone(r.CachePath, false, &git.CloneOptions{
+				URL:  r.URL,
+				Auth: r.authMethod(),
+			})
+			if err != nil {
+				if _, statErr := os.Stat(r.CachePath); statErr == nil {
+					return nil
+				}
+				return fmt.Errorf("git clone %s: %w", r.URL, err)
+			}
+		}
+
+		wt, err := repo.Worktree()
+		if err != nil {
+			return fmt.Errorf("worktree: %w", err)
+		}
+		err = wt.Checkout(&git.CheckoutOptions{
+			Hash: plumbing.NewHash(r.Ref),
+		})
+		if err != nil {
+			return fmt.Errorf("checkout %s: %w", r.Ref, err)
+		}
+	}
+
 	return nil
 }
 

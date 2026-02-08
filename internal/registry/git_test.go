@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // setupTestGitRepo creates a local git repo with skills committed.
@@ -48,6 +51,26 @@ func setupTestGitRepo(t *testing.T, skillsDir string, skills map[string]string) 
 	run("commit", "-m", "initial commit")
 
 	return repoDir
+}
+
+func makeGitRunner(t *testing.T, repoDir string) func(args ...string) string {
+	t.Helper()
+	return func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
 }
 
 func TestGitRegistry_Fetch(t *testing.T) {
@@ -275,4 +298,130 @@ func TestGitRegistry_Refresh(t *testing.T) {
 	if sk.Name != "new-skill" {
 		t.Fatalf("expected 'new-skill', got %q", sk.Name)
 	}
+}
+
+func TestGitRegistry_Fetch_WithTagRef(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"v1-skill": "---\nname: v1-skill\n---\n# V1 Skill\n",
+	})
+
+	run := makeGitRunner(t, repoDir)
+	run("tag", "v1.0.0")
+
+	// Add a second skill after the tag
+	newDir := filepath.Join(repoDir, "v2-skill")
+	require.NoError(t, os.MkdirAll(newDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newDir, "SKILL.md"),
+		[]byte("---\nname: v2-skill\n---\n# V2 Skill\n"), 0o644))
+	run("add", ".")
+	run("commit", "-m", "add v2-skill")
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "tag-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "tag-reg"),
+		SkillsPath:   ".",
+		Ref:          "v1.0.0",
+	}
+
+	// Should find v1-skill (exists at tag)
+	sk, _, err := reg.Fetch("v1-skill")
+	require.NoError(t, err)
+	assert.Equal(t, "v1-skill", sk.Name)
+
+	// Should NOT find v2-skill (added after tag)
+	_, _, err = reg.Fetch("v2-skill")
+	require.Error(t, err)
+}
+
+func TestGitRegistry_Fetch_WithBranchRef(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"main-skill": "---\nname: main-skill\n---\n# Main\n",
+	})
+
+	run := makeGitRunner(t, repoDir)
+	run("checkout", "-b", "feature")
+
+	featureDir := filepath.Join(repoDir, "feature-skill")
+	require.NoError(t, os.MkdirAll(featureDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(featureDir, "SKILL.md"),
+		[]byte("---\nname: feature-skill\n---\n# Feature\n"), 0o644))
+	run("add", ".")
+	run("commit", "-m", "add feature-skill")
+	run("checkout", "main") // switch source repo back
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "branch-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "branch-reg"),
+		SkillsPath:   ".",
+		Ref:          "feature",
+	}
+
+	// Should find feature-skill (on the feature branch)
+	sk, _, err := reg.Fetch("feature-skill")
+	require.NoError(t, err)
+	assert.Equal(t, "feature-skill", sk.Name)
+
+	// Should also find main-skill (feature branch has it too, inherited from main)
+	sk2, _, err := reg.Fetch("main-skill")
+	require.NoError(t, err)
+	assert.Equal(t, "main-skill", sk2.Name)
+}
+
+func TestGitRegistry_Fetch_WithSHARef(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"original": "---\nname: original\n---\n# Original\n",
+	})
+
+	// Grab the SHA of the first commit
+	run := makeGitRunner(t, repoDir)
+	sha := run("rev-parse", "HEAD")
+
+	// Add another commit on top
+	laterDir := filepath.Join(repoDir, "later-skill")
+	require.NoError(t, os.MkdirAll(laterDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(laterDir, "SKILL.md"),
+		[]byte("---\nname: later-skill\n---\n# Later\n"), 0o644))
+	run("add", ".")
+	run("commit", "-m", "add later-skill")
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "sha-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "sha-reg"),
+		SkillsPath:   ".",
+		Ref:          sha,
+	}
+
+	// Should find original (at pinned SHA)
+	sk, _, err := reg.Fetch("original")
+	require.NoError(t, err)
+	assert.Equal(t, "original", sk.Name)
+
+	// Should NOT find later-skill
+	_, _, err = reg.Fetch("later-skill")
+	require.Error(t, err)
+}
+
+func TestGitRegistry_Fetch_LatestRef(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"skill-a": "---\nname: skill-a\n---\n# A\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "latest-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "latest-reg"),
+		SkillsPath:   ".",
+		Ref:          "latest",
+	}
+
+	sk, _, err := reg.Fetch("skill-a")
+	require.NoError(t, err)
+	assert.Equal(t, "skill-a", sk.Name)
 }
