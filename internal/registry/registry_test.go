@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -69,22 +70,32 @@ func TestEmbeddedRegistry_List(t *testing.T) {
 	}
 }
 
-func TestGitRegistry_Fetch_Stub(t *testing.T) {
-	g := &GitRegistry{RegistryName: "git", URL: "https://example.com/x.git"}
+func TestGitRegistry_Fetch_InvalidURL(t *testing.T) {
+	cacheDir := t.TempDir()
+	g := &GitRegistry{
+		RegistryName: "git",
+		URL:          "/nonexistent/repo",
+		CachePath:    filepath.Join(cacheDir, "git"),
+	}
 	_, _, err := g.Fetch("any")
 	if err == nil {
-		t.Fatalf("expected error from git stub")
+		t.Fatalf("expected error from invalid git URL")
 	}
-	if !strings.Contains(err.Error(), "coming soon") {
-		t.Fatalf("unexpected error message: %v", err)
+	if !strings.Contains(err.Error(), "git clone") {
+		t.Fatalf("expected clone error, got: %v", err)
 	}
 }
 
-func TestGitRegistry_List_Stub(t *testing.T) {
-	g := &GitRegistry{RegistryName: "git", URL: "https://example.com/x.git"}
+func TestGitRegistry_List_InvalidURL(t *testing.T) {
+	cacheDir := t.TempDir()
+	g := &GitRegistry{
+		RegistryName: "git",
+		URL:          "/nonexistent/repo",
+		CachePath:    filepath.Join(cacheDir, "git"),
+	}
 	_, err := g.List()
 	if err == nil {
-		t.Fatalf("expected error from git stub list")
+		t.Fatalf("expected error from invalid git URL")
 	}
 }
 

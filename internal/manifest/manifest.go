@@ -27,8 +27,18 @@ type SkillRef struct {
 
 // RegistryRef points to a remote git repository of skills.
 type RegistryRef struct {
-	Name string `yaml:"name"`
-	URL  string `yaml:"url"`
+	Name  string            `yaml:"name"`
+	URL   string            `yaml:"url"`
+	Paths map[string]string `yaml:"paths,omitempty"` // e.g. {"skills": "skills/", "prompts": "prompts/"}
+}
+
+// SkillsPath returns the configured path for skills in this registry,
+// defaulting to "." (repo root) if not set.
+func (r RegistryRef) SkillsPath() string {
+	if p, ok := r.Paths["skills"]; ok && p != "" {
+		return p
+	}
+	return "."
 }
 
 // LoadManifest reads and parses a vibes.yaml file from the given path.

@@ -3,7 +3,10 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/spf13/cobra"
 )
 
@@ -51,4 +54,27 @@ func debugf(format string, a ...interface{}) {
 	if verbose {
 		fmt.Fprintf(os.Stderr, "[vibes] "+format+"\n", a...)
 	}
+}
+
+// defaultCachePath returns ~/.positive-vibes/cache/<name>.
+func defaultCachePath(name string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	return filepath.Join(home, ".positive-vibes", "cache", name)
+}
+
+// gitRegistriesFromManifest builds GitRegistry sources for each registry in the manifest.
+func gitRegistriesFromManifest(m *manifest.Manifest) []registry.SkillSource {
+	var sources []registry.SkillSource
+	for _, r := range m.Registries {
+		sources = append(sources, &registry.GitRegistry{
+			RegistryName: r.Name,
+			URL:          r.URL,
+			CachePath:    defaultCachePath(r.Name),
+			SkillsPath:   r.SkillsPath(),
+		})
+	}
+	return sources
 }

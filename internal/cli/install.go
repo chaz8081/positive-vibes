@@ -24,9 +24,7 @@ var installCmd = &cobra.Command{
 		// prepare registries: embedded + ones from manifest
 		regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
 		if m, err := manifest.LoadManifest(manifestPath); err == nil {
-			for _, r := range m.Registries {
-				regs = append(regs, &registry.GitRegistry{RegistryName: r.Name, URL: r.URL})
-			}
+			regs = append(regs, gitRegistriesFromManifest(m)...)
 		}
 
 		inst := engine.NewInstaller(regs)

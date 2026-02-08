@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	applyForce bool
-	applyLink  bool
+	applyForce   bool
+	applyLink    bool
+	applyRefresh bool
 )
 
 var applyCmd = &cobra.Command{
@@ -32,8 +33,18 @@ var applyCmd = &cobra.Command{
 		// registries
 		regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
 		if m, err := manifest.LoadManifest(manifestPath); err == nil {
-			for _, r := range m.Registries {
-				regs = append(regs, &registry.GitRegistry{RegistryName: r.Name, URL: r.URL})
+			regs = append(regs, gitRegistriesFromManifest(m)...)
+		}
+
+		// Refresh git registries if requested
+		if applyRefresh {
+			for _, r := range regs {
+				if gr, ok := r.(*registry.GitRegistry); ok {
+					debugf("refreshing registry %s ...", gr.Name())
+					if err := gr.Refresh(); err != nil {
+						fmt.Printf("warning: refresh %s failed: %v\n", gr.Name(), err)
+					}
+				}
 			}
 		}
 
@@ -78,5 +89,6 @@ var applyCmd = &cobra.Command{
 func init() {
 	applyCmd.Flags().BoolVarP(&applyForce, "force", "f", false, "overwrite existing skills")
 	applyCmd.Flags().BoolVarP(&applyLink, "link", "l", false, "symlink skills instead of copying")
+	applyCmd.Flags().BoolVar(&applyRefresh, "refresh", false, "pull latest from git registries before applying")
 	rootCmd.AddCommand(applyCmd)
 }
