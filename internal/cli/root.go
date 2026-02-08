@@ -15,9 +15,9 @@ var (
 It's playful, helpful, and chill — manage Agent Skills and Instructions
 from a single source of truth (vibes.yaml) and keep your dev setup groovy.
 
-Examples:
+  Examples:
   vibes init    # create a vibes.yaml
-  vibes sync    # push local vibes to supported platforms
+  vibes apply   # push local vibes to supported platforms
 `,
 		// Default action shows help
 		Run: func(cmd *cobra.Command, args []string) {
