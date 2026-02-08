@@ -190,6 +190,49 @@ func (r *GitRegistry) List() ([]string, error) {
 	return names, nil
 }
 
+// FetchFile retrieves raw file bytes from a skill directory in the registry.
+// skillName is the skill directory name; relPath is the path relative to the
+// skill directory (e.g., "instructions/setup.md").
+func (r *GitRegistry) FetchFile(skillName, relPath string) ([]byte, error) {
+	if err := r.ensureCache(); err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(r.skillsDir(), skillName, relPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("file not found: %s/%s (registry %s)", skillName, relPath, r.RegistryName)
+	}
+	return data, nil
+}
+
+// ListFiles returns the names of files directly within a subdirectory of a
+// skill directory. It does not recurse into nested subdirectories.
+// Returns an empty slice (not an error) if the directory does not exist.
+func (r *GitRegistry) ListFiles(skillName, relDir string) ([]string, error) {
+	if err := r.ensureCache(); err != nil {
+		return nil, err
+	}
+
+	dir := filepath.Join(r.skillsDir(), skillName, relDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read dir %s/%s: %w", skillName, relDir, err)
+	}
+
+	var names []string
+	for _, ent := range entries {
+		if !ent.IsDir() {
+			names = append(names, ent.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
 // Refresh pulls the latest changes from the remote into the cached worktree.
 // If the cache does not exist yet, it clones instead.
 // For pinned refs (anything other than "latest" or empty), refresh is a no-op

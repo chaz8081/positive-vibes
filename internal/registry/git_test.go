@@ -554,6 +554,243 @@ func TestGitRegistry_Fetch_NonexistentSHARef(t *testing.T) {
 	assert.Contains(t, err.Error(), "bad-sha-reg")
 }
 
+// setupTestGitRepoWithFiles creates a local git repo with arbitrary files committed.
+// files is a map of relative paths (e.g., "skill-a/instructions/setup.md") to content.
+// Returns the path to the repo (usable as a URL for go-git).
+func setupTestGitRepoWithFiles(t *testing.T, baseDir string, files map[string]string) string {
+	t.Helper()
+	repoDir := t.TempDir()
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	run("init")
+	run("checkout", "-b", "main")
+
+	for relPath, content := range files {
+		fullPath := filepath.Join(repoDir, baseDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	run("add", ".")
+	run("commit", "-m", "initial commit")
+
+	return repoDir
+}
+
+// --- FetchFile tests ---
+
+func TestGitRegistry_FetchFile(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md":                   "---\nname: my-skill\n---\n# My Skill\n",
+		"my-skill/instructions/setup.md":      "# Setup Instructions\nDo these steps.",
+		"my-skill/agents/code-reviewer.md":    "# Code Reviewer Agent\nReview code carefully.",
+		"my-skill/instructions/guidelines.md": "# Guidelines\nFollow these rules.",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "file-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "file-reg"),
+		SkillsPath:   ".",
+	}
+
+	// FetchFile should return exact bytes for a known file
+	data, err := reg.FetchFile("my-skill", "instructions/setup.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Setup Instructions\nDo these steps.", string(data))
+
+	// FetchFile for agent file
+	data, err = reg.FetchFile("my-skill", "agents/code-reviewer.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Code Reviewer Agent\nReview code carefully.", string(data))
+}
+
+func TestGitRegistry_FetchFile_NotFound(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md": "---\nname: my-skill\n---\n# My Skill\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "file-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "file-reg"),
+		SkillsPath:   ".",
+	}
+
+	_, err := reg.FetchFile("my-skill", "nonexistent.md")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestGitRegistry_FetchFile_NonexistentSkill(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md": "---\nname: my-skill\n---\n# My Skill\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "file-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "file-reg"),
+		SkillsPath:   ".",
+	}
+
+	_, err := reg.FetchFile("no-such-skill", "instructions/setup.md")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestGitRegistry_FetchFile_CustomSkillsPath(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, "resources/skills", map[string]string{
+		"nested-skill/SKILL.md":            "---\nname: nested-skill\n---\n# Nested\n",
+		"nested-skill/instructions/run.md": "# Run Instructions\nJust run it.",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "nested-file-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "nested-file-reg"),
+		SkillsPath:   "resources/skills",
+	}
+
+	data, err := reg.FetchFile("nested-skill", "instructions/run.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Run Instructions\nJust run it.", string(data))
+}
+
+// --- ListFiles tests ---
+
+func TestGitRegistry_ListFiles(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md":                   "---\nname: my-skill\n---\n# My Skill\n",
+		"my-skill/instructions/setup.md":      "# Setup",
+		"my-skill/instructions/guidelines.md": "# Guidelines",
+		"my-skill/instructions/advanced.md":   "# Advanced",
+		"my-skill/agents/reviewer.md":         "# Reviewer",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "list-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "list-reg"),
+		SkillsPath:   ".",
+	}
+
+	// ListFiles for instructions directory -- should return sorted relative paths
+	files, err := reg.ListFiles("my-skill", "instructions")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"advanced.md", "guidelines.md", "setup.md"}, files)
+
+	// ListFiles for agents directory
+	files, err = reg.ListFiles("my-skill", "agents")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"reviewer.md"}, files)
+}
+
+func TestGitRegistry_ListFiles_EmptyDir(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md": "---\nname: my-skill\n---\n# My Skill\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "list-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "list-reg"),
+		SkillsPath:   ".",
+	}
+
+	// ListFiles for a directory that doesn't exist should return empty list, no error
+	files, err := reg.ListFiles("my-skill", "instructions")
+	require.NoError(t, err)
+	assert.Empty(t, files)
+}
+
+func TestGitRegistry_ListFiles_NonexistentSkill(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md": "---\nname: my-skill\n---\n# My Skill\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "list-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "list-reg"),
+		SkillsPath:   ".",
+	}
+
+	// ListFiles for nonexistent skill should return empty list, no error
+	files, err := reg.ListFiles("no-such-skill", "instructions")
+	require.NoError(t, err)
+	assert.Empty(t, files)
+}
+
+func TestGitRegistry_ListFiles_CustomSkillsPath(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, "resources/skills", map[string]string{
+		"nested/SKILL.md":              "---\nname: nested\n---\n# Nested\n",
+		"nested/agents/helper.md":      "# Helper Agent",
+		"nested/agents/code-review.md": "# Code Review Agent",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "nested-list-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "nested-list-reg"),
+		SkillsPath:   "resources/skills",
+	}
+
+	files, err := reg.ListFiles("nested", "agents")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"code-review.md", "helper.md"}, files)
+}
+
+func TestGitRegistry_ListFiles_NestedSubdirs(t *testing.T) {
+	// ListFiles should only return files directly in the specified directory,
+	// not recurse into subdirectories.
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md":                        "---\nname: my-skill\n---\n# My Skill\n",
+		"my-skill/instructions/top-level.md":       "# Top Level",
+		"my-skill/instructions/sub/nested-file.md": "# Nested",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "nested-dir-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "nested-dir-reg"),
+		SkillsPath:   ".",
+	}
+
+	// Should only get files at the top level of instructions/, not in sub/
+	files, err := reg.ListFiles("my-skill", "instructions")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"top-level.md"}, files)
+}
+
 func TestGitRegistry_Fetch_PinnedRef_FallsBackToCache(t *testing.T) {
 	repoDir := setupTestGitRepo(t, ".", map[string]string{
 		"cached-skill": "---\nname: cached-skill\n---\n# Cached\n",

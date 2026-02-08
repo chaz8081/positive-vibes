@@ -139,5 +139,70 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 		}
 	}
 
+	// iterate instructions
+	for _, inst := range m.Instructions {
+		// Resolve source path relative to project directory
+		sourcePath := inst.Path
+		if sourcePath != "" && !filepath.IsAbs(sourcePath) {
+			sourcePath = filepath.Join(projectDir, sourcePath)
+		}
+
+		for _, t := range targets {
+			// If ApplyTo is set, only install to matching target
+			if inst.ApplyTo != "" && inst.ApplyTo != t.Name() {
+				continue
+			}
+
+			if err := t.InstallInstruction(inst.Name, inst.Content, sourcePath, projectDir, opts); err != nil {
+				errMsg := fmt.Sprintf("install instruction %s -> %s: %v", inst.Name, t.Name(), err)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  inst.Name,
+					TargetName: t.Name(),
+					Status:     OpError,
+					Error:      errMsg,
+				})
+			} else {
+				res.Installed++
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  inst.Name,
+					TargetName: t.Name(),
+					Status:     OpInstalled,
+				})
+			}
+		}
+	}
+
+	// iterate agents
+	for _, agent := range m.Agents {
+		// Resolve source path relative to project directory
+		sourcePath := agent.Path
+		if sourcePath != "" && !filepath.IsAbs(sourcePath) {
+			sourcePath = filepath.Join(projectDir, sourcePath)
+		}
+
+		// TODO: Handle agent.Registry (fetch from registry) in a future pass
+
+		for _, t := range targets {
+			if err := t.InstallAgent(agent.Name, sourcePath, projectDir, opts); err != nil {
+				errMsg := fmt.Sprintf("install agent %s -> %s: %v", agent.Name, t.Name(), err)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  agent.Name,
+					TargetName: t.Name(),
+					Status:     OpError,
+					Error:      errMsg,
+				})
+			} else {
+				res.Installed++
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  agent.Name,
+					TargetName: t.Name(),
+					Status:     OpInstalled,
+				})
+			}
+		}
+	}
+
 	return res, nil
 }
