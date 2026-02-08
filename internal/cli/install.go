@@ -25,15 +25,27 @@ var installCmd = &cobra.Command{
 		regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
 		if m, err := manifest.LoadManifest(manifestPath); err == nil {
 			for _, r := range m.Registries {
-				// create GitRegistry entries for now
 				regs = append(regs, &registry.GitRegistry{RegistryName: r.Name, URL: r.URL})
 			}
 		}
 
 		inst := engine.NewInstaller(regs)
 		if err := inst.Install(name, manifestPath); err != nil {
-			fmt.Printf("error: %v\n", err)
+			fmt.Printf("💥 %v\n", err)
 			return
+		}
+
+		// Check what was installed to provide the right feedback
+		m, err := manifest.LoadManifest(manifestPath)
+		if err == nil {
+			for _, s := range m.Skills {
+				if s.Name == name && s.Path != "" {
+					fmt.Printf("📂 Found local skill at %s\n", s.Path)
+					fmt.Println("✅ Added to vibes.yaml with local path")
+					fmt.Println("Run 'vibes apply' to install it everywhere! 🎯")
+					return
+				}
+			}
 		}
 
 		fmt.Println("✅ Found it! Adding to your vibes...")

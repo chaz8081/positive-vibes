@@ -43,22 +43,26 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 
 	res := &ApplyResult{}
 
+	projectDir := filepath.Dir(manifestPath)
+
 	// iterate skills
 	for _, s := range m.Skills {
 		var sk *schema.Skill
 		var srcDir string
-		// local override path
+		// local override path -- resolve relative to project directory
 		if s.Path != "" {
-			// parse SKILL.md from path
-			p := filepath.Join(s.Path, "SKILL.md")
+			resolvedPath := s.Path
+			if !filepath.IsAbs(resolvedPath) {
+				resolvedPath = filepath.Join(projectDir, resolvedPath)
+			}
+			p := filepath.Join(resolvedPath, "SKILL.md")
 			data, err := os.ReadFile(p)
 			if err == nil {
 				sk, err = schema.ParseSkillFile(data)
 				if err == nil {
-					srcDir = s.Path
+					srcDir = resolvedPath
 				}
 			}
-			_ = p
 		}
 
 		// if not local, search registries
