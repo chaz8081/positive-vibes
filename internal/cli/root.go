@@ -13,13 +13,13 @@ import (
 var (
 	rootCmd = &cobra.Command{
 		Use:   "vibes",
-		Short: "positive-vibes - harmonize your AI tooling ✨",
+		Short: "positive-vibes - harmonize your AI tooling",
 		Long: `positive-vibes helps align your AI tooling across platforms.
-It's playful, helpful, and chill — manage Agent Skills and Instructions
-from a single source of truth (vibes.yaml) and keep your dev setup groovy.
+Manage Agent Skills and Instructions from a single source of truth
+(vibes.yml) and keep your dev setup in sync.
 
   Examples:
-  vibes init    # create a vibes.yaml
+  vibes init    # create a vibes.yml
   vibes apply   # push local vibes to supported platforms
 `,
 		// Default action shows help
@@ -34,7 +34,7 @@ from a single source of truth (vibes.yaml) and keep your dev setup groovy.
 
 func init() {
 	// Persistent flags
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output 📣")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().StringVarP(&projectDir, "project-dir", "p", ".", "override project root directory")
 }
 
@@ -63,6 +63,21 @@ func defaultCachePath(name string) string {
 		home = "."
 	}
 	return filepath.Join(home, ".positive-vibes", "cache", name)
+}
+
+// defaultGlobalManifestPath returns the path to the user-level global config.
+// Uses $XDG_CONFIG_HOME/positive-vibes/vibes.yml, falling back to
+// ~/.config/positive-vibes/vibes.yml.
+func defaultGlobalManifestPath() string {
+	configDir := os.Getenv("XDG_CONFIG_HOME")
+	if configDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+		configDir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(configDir, "positive-vibes", "vibes.yml")
 }
 
 // gitRegistriesFromManifest builds GitRegistry sources for each registry in the manifest.

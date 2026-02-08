@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/chaz8081/positive-vibes/internal/engine"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
@@ -20,21 +18,28 @@ var (
 
 var applyCmd = &cobra.Command{
 	Use:   "apply",
-	Short: "Apply vibes.yaml to all targets 🧘",
+	Short: "Apply manifest to all targets",
 	Run: func(cmd *cobra.Command, args []string) {
 		project := ProjectDir()
-		manifestPath := filepath.Join(project, "vibes.yaml")
 
-		if _, err := os.Stat(manifestPath); err != nil {
-			fmt.Printf("no vibes.yaml found at %s - run 'vibes init' first\n", manifestPath)
+		// Check if any manifest exists in project
+		_, manifestPath, err := manifest.LoadManifestFromProject(project)
+		if err != nil {
+			fmt.Printf("no manifest found in %s - run 'vibes init' first\n", project)
+			return
+		}
+
+		// Load merged manifest (global + project)
+		globalPath := defaultGlobalManifestPath()
+		merged, err := manifest.LoadMergedManifest(project, globalPath)
+		if err != nil {
+			fmt.Printf("error loading manifest: %v\n", err)
 			return
 		}
 
 		// registries
 		regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
-		if m, err := manifest.LoadManifest(manifestPath); err == nil {
-			regs = append(regs, gitRegistriesFromManifest(m)...)
-		}
+		regs = append(regs, gitRegistriesFromManifest(merged)...)
 
 		// Refresh git registries if requested
 		if applyRefresh {
@@ -51,7 +56,7 @@ var applyCmd = &cobra.Command{
 		applier := engine.NewApplier(regs)
 		opts := target.InstallOpts{Force: applyForce, Link: applyLink}
 
-		fmt.Println("🧘 Aligning your AI tools...")
+		fmt.Println("Aligning your AI tools...")
 		fmt.Println()
 		res, err := applier.Apply(manifestPath, opts)
 		if err != nil {
@@ -63,25 +68,24 @@ var applyCmd = &cobra.Command{
 		for _, op := range res.Ops {
 			switch op.Status {
 			case engine.OpInstalled:
-				fmt.Printf("  ✅ %s -> %s\n", op.SkillName, op.TargetName)
+				fmt.Printf("  installed: %s -> %s\n", op.SkillName, op.TargetName)
 			case engine.OpSkipped:
-				fmt.Printf("  ⏭️  %s -> %s (already exists)\n", op.SkillName, op.TargetName)
+				fmt.Printf("  skipped:   %s -> %s (already exists)\n", op.SkillName, op.TargetName)
 			case engine.OpNotFound:
-				fmt.Printf("  ⚠️  %s (not found)\n", op.SkillName)
+				fmt.Printf("  not found: %s\n", op.SkillName)
 			case engine.OpError:
-				fmt.Printf("  ❌ %s -> %s: %s\n", op.SkillName, op.TargetName, op.Error)
+				fmt.Printf("  error:     %s -> %s: %s\n", op.SkillName, op.TargetName, op.Error)
 			}
 		}
 
 		// Summary line
 		fmt.Println()
 		if res.Installed > 0 {
-			fmt.Printf("✨ Vibe check passed! Installed %d, skipped %d, errors %d.\n", res.Installed, res.Skipped, len(res.Errors))
-			fmt.Println("🎵 Your tools are in harmony.")
+			fmt.Printf("Done. Installed %d, skipped %d, errors %d.\n", res.Installed, res.Skipped, len(res.Errors))
 		} else if res.Skipped > 0 {
-			fmt.Printf("😎 Already in sync! %d skills up to date. Use --force to reinstall.\n", res.Skipped)
+			fmt.Printf("Already in sync. %d skills up to date. Use --force to reinstall.\n", res.Skipped)
 		} else {
-			fmt.Println("🤔 Nothing to install. Check your vibes.yaml.")
+			fmt.Println("Nothing to install. Check your manifest.")
 		}
 	},
 }
