@@ -12,3 +12,17 @@ type SkillSource interface {
 	// List returns all available skill names.
 	List() ([]string, error)
 }
+
+// FileSource extends SkillSource with raw file access into skill directories.
+// Registries that support fetching arbitrary files (e.g., agent definitions)
+// should implement this interface.
+type FileSource interface {
+	SkillSource
+	// FetchFile retrieves raw file bytes from a skill directory.
+	// skillName is the skill directory name; relPath is the path relative to
+	// the skill directory (e.g., "agents/reviewer.md").
+	FetchFile(skillName, relPath string) ([]byte, error)
+	// ListFiles returns the names of files directly within a subdirectory of
+	// a skill directory. Returns an empty slice if the directory does not exist.
+	ListFiles(skillName, relDir string) ([]string, error)
+}

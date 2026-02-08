@@ -66,15 +66,19 @@ var applyCmd = &cobra.Command{
 
 		// Print per-operation lines
 		for _, op := range res.Ops {
+			kind := string(op.Kind)
+			if kind == "" {
+				kind = "skill"
+			}
 			switch op.Status {
 			case engine.OpInstalled:
-				fmt.Printf("  installed: %s -> %s\n", op.SkillName, op.TargetName)
+				fmt.Printf("  installed %s: %s -> %s\n", kind, op.SkillName, op.TargetName)
 			case engine.OpSkipped:
-				fmt.Printf("  skipped:   %s -> %s (already exists)\n", op.SkillName, op.TargetName)
+				fmt.Printf("  skipped %s:   %s -> %s (already exists)\n", kind, op.SkillName, op.TargetName)
 			case engine.OpNotFound:
-				fmt.Printf("  not found: %s\n", op.SkillName)
+				fmt.Printf("  not found %s: %s\n", kind, op.SkillName)
 			case engine.OpError:
-				fmt.Printf("  error:     %s -> %s: %s\n", op.SkillName, op.TargetName, op.Error)
+				fmt.Printf("  error %s:     %s -> %s: %s\n", kind, op.SkillName, op.TargetName, op.Error)
 			}
 		}
 
@@ -83,7 +87,7 @@ var applyCmd = &cobra.Command{
 		if res.Installed > 0 {
 			fmt.Printf("Done. Installed %d, skipped %d, errors %d.\n", res.Installed, res.Skipped, len(res.Errors))
 		} else if res.Skipped > 0 {
-			fmt.Printf("Already in sync. %d skills up to date. Use --force to reinstall.\n", res.Skipped)
+			fmt.Printf("Already in sync. %d items up to date. Use --force to reinstall.\n", res.Skipped)
 		} else {
 			fmt.Println("Nothing to install. Check your manifest.")
 		}

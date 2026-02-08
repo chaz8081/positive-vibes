@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
@@ -21,10 +22,20 @@ const (
 	OpNotFound  ApplyOpStatus = "not_found"
 )
 
-// ApplyOp records the result of installing one skill to one target.
+// ApplyOpKind distinguishes the type of item that was applied.
+type ApplyOpKind string
+
+const (
+	KindSkill       ApplyOpKind = "skill"
+	KindInstruction ApplyOpKind = "instruction"
+	KindAgent       ApplyOpKind = "agent"
+)
+
+// ApplyOp records the result of installing one item to one target.
 type ApplyOp struct {
 	SkillName  string
 	TargetName string
+	Kind       ApplyOpKind
 	Status     ApplyOpStatus
 	Error      string
 }
@@ -100,6 +111,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 			res.Errors = append(res.Errors, fmt.Sprintf("skill not found: %s", s.Name))
 			res.Ops = append(res.Ops, ApplyOp{
 				SkillName: s.Name,
+				Kind:      KindSkill,
 				Status:    OpNotFound,
 				Error:     fmt.Sprintf("skill not found: %s", s.Name),
 			})
@@ -114,6 +126,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 					res.Ops = append(res.Ops, ApplyOp{
 						SkillName:  sk.Name,
 						TargetName: t.Name(),
+						Kind:       KindSkill,
 						Status:     OpSkipped,
 					})
 					continue
@@ -125,6 +138,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 				res.Ops = append(res.Ops, ApplyOp{
 					SkillName:  sk.Name,
 					TargetName: t.Name(),
+					Kind:       KindSkill,
 					Status:     OpError,
 					Error:      errMsg,
 				})
@@ -133,6 +147,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 				res.Ops = append(res.Ops, ApplyOp{
 					SkillName:  sk.Name,
 					TargetName: t.Name(),
+					Kind:       KindSkill,
 					Status:     OpInstalled,
 				})
 			}
@@ -159,6 +174,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 				res.Ops = append(res.Ops, ApplyOp{
 					SkillName:  inst.Name,
 					TargetName: t.Name(),
+					Kind:       KindInstruction,
 					Status:     OpError,
 					Error:      errMsg,
 				})
@@ -167,6 +183,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 				res.Ops = append(res.Ops, ApplyOp{
 					SkillName:  inst.Name,
 					TargetName: t.Name(),
+					Kind:       KindInstruction,
 					Status:     OpInstalled,
 				})
 			}
@@ -175,13 +192,71 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 
 	// iterate agents
 	for _, agent := range m.Agents {
-		// Resolve source path relative to project directory
+		// Resolve source path: local path or registry fetch
 		sourcePath := agent.Path
 		if sourcePath != "" && !filepath.IsAbs(sourcePath) {
 			sourcePath = filepath.Join(projectDir, sourcePath)
 		}
 
-		// TODO: Handle agent.Registry (fetch from registry) in a future pass
+		// If agent.Registry is set, fetch the file from the registry
+		var tempFile string
+		if agent.Registry != "" {
+			regName, skillName, relPath, parseErr := parseRegistryRef(agent.Registry)
+			if parseErr != nil {
+				errMsg := fmt.Sprintf("agent %s: invalid registry ref %q: %v", agent.Name, agent.Registry, parseErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName: agent.Name,
+					Kind:      KindAgent,
+					Status:    OpError,
+					Error:     errMsg,
+				})
+				continue
+			}
+
+			data, fetchErr := a.fetchFileFromRegistry(regName, skillName, relPath)
+			if fetchErr != nil {
+				errMsg := fmt.Sprintf("agent %s: fetch from registry: %v", agent.Name, fetchErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName: agent.Name,
+					Kind:      KindAgent,
+					Status:    OpError,
+					Error:     errMsg,
+				})
+				continue
+			}
+
+			// Write fetched bytes to a temp file
+			tmp, tmpErr := os.CreateTemp(projectDir, "pv-agent-*")
+			if tmpErr != nil {
+				errMsg := fmt.Sprintf("agent %s: create temp file: %v", agent.Name, tmpErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName: agent.Name,
+					Kind:      KindAgent,
+					Status:    OpError,
+					Error:     errMsg,
+				})
+				continue
+			}
+			if _, wErr := tmp.Write(data); wErr != nil {
+				tmp.Close()
+				os.Remove(tmp.Name())
+				errMsg := fmt.Sprintf("agent %s: write temp file: %v", agent.Name, wErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName: agent.Name,
+					Kind:      KindAgent,
+					Status:    OpError,
+					Error:     errMsg,
+				})
+				continue
+			}
+			tmp.Close()
+			tempFile = tmp.Name()
+			sourcePath = tempFile
+		}
 
 		for _, t := range targets {
 			if err := t.InstallAgent(agent.Name, sourcePath, projectDir, opts); err != nil {
@@ -190,6 +265,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 				res.Ops = append(res.Ops, ApplyOp{
 					SkillName:  agent.Name,
 					TargetName: t.Name(),
+					Kind:       KindAgent,
 					Status:     OpError,
 					Error:      errMsg,
 				})
@@ -198,11 +274,60 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 				res.Ops = append(res.Ops, ApplyOp{
 					SkillName:  agent.Name,
 					TargetName: t.Name(),
+					Kind:       KindAgent,
 					Status:     OpInstalled,
 				})
 			}
 		}
+
+		// Clean up temp file after installing to all targets
+		if tempFile != "" {
+			os.Remove(tempFile)
+		}
 	}
 
 	return res, nil
+}
+
+// parseRegistryRef parses a registry reference string in the format
+// "registryName/skillName:relPath". Returns the three components.
+func parseRegistryRef(ref string) (regName, skillName, relPath string, err error) {
+	// Split on ":" to get "registryName/skillName" and "relPath"
+	colonIdx := strings.Index(ref, ":")
+	if colonIdx < 0 {
+		return "", "", "", fmt.Errorf("expected format 'registryName/skillName:relPath', no ':' found")
+	}
+	prefix := ref[:colonIdx]
+	relPath = ref[colonIdx+1:]
+	if relPath == "" {
+		return "", "", "", fmt.Errorf("empty file path after ':'")
+	}
+
+	// Split prefix on "/" to get registryName and skillName
+	slashIdx := strings.Index(prefix, "/")
+	if slashIdx < 0 {
+		return "", "", "", fmt.Errorf("expected format 'registryName/skillName:relPath', no '/' found in %q", prefix)
+	}
+	regName = prefix[:slashIdx]
+	skillName = prefix[slashIdx+1:]
+	if regName == "" || skillName == "" {
+		return "", "", "", fmt.Errorf("registryName and skillName must be non-empty")
+	}
+	return regName, skillName, relPath, nil
+}
+
+// fetchFileFromRegistry looks up a registry by name, asserts it supports
+// FileSource, and fetches the requested file.
+func (a *Applier) fetchFileFromRegistry(regName, skillName, relPath string) ([]byte, error) {
+	for _, r := range a.Registries {
+		if r.Name() != regName {
+			continue
+		}
+		fs, ok := r.(registry.FileSource)
+		if !ok {
+			return nil, fmt.Errorf("registry %q does not support file access", regName)
+		}
+		return fs.FetchFile(skillName, relPath)
+	}
+	return nil, fmt.Errorf("registry %q not found", regName)
 }

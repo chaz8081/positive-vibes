@@ -2,12 +2,54 @@ package engine
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/chaz8081/positive-vibes/internal/target"
 )
+
+// setupTestGitRepoWithFiles creates a local git repo with arbitrary files committed.
+// files is a map of relative paths to content. Returns the path to the repo.
+func setupTestGitRepoWithFiles(t *testing.T, baseDir string, files map[string]string) string {
+	t.Helper()
+	repoDir := t.TempDir()
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	run("init")
+	run("checkout", "-b", "main")
+
+	for relPath, content := range files {
+		fullPath := filepath.Join(repoDir, baseDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	run("add", ".")
+	run("commit", "-m", "initial commit")
+
+	return repoDir
+}
 
 func TestApplierApply(t *testing.T) {
 	tmp := t.TempDir()
@@ -520,5 +562,260 @@ agents:
 		if !names[want] {
 			t.Fatalf("missing op for %q in %v", want, res.Ops)
 		}
+	}
+}
+
+// --- Registry-based agent tests ---
+
+func TestApplierApply_AgentFromRegistry(t *testing.T) {
+	// Create a git repo that acts as a registry with a skill containing an agent file
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md":                "---\nname: my-skill\n---\n# My Skill\n",
+		"my-skill/agents/code-reviewer.md": "# Code Reviewer Agent\nReview all code changes carefully.",
+	})
+
+	cacheDir := t.TempDir()
+	gitReg := &registry.GitRegistry{
+		RegistryName: "test-remote",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "test-remote"),
+		SkillsPath:   ".",
+	}
+
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: conventional-commits
+agents:
+- name: code-reviewer
+  registry: "test-remote/my-skill:agents/code-reviewer.md"
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry(), gitReg}
+	a := NewApplier(regs)
+	opts := target.InstallOpts{Force: true}
+	res, err := a.Apply(mfile, opts)
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	// Verify the agent file was installed on the target
+	agentFile := filepath.Join(tmp, ".opencode", "agents", "code-reviewer.md")
+	data, err := os.ReadFile(agentFile)
+	if err != nil {
+		t.Fatalf("agent file not found at %s: %v", agentFile, err)
+	}
+	expected := "# Code Reviewer Agent\nReview all code changes carefully."
+	if string(data) != expected {
+		t.Fatalf("agent content mismatch:\n  got:  %q\n  want: %q", string(data), expected)
+	}
+
+	// Verify ops tracking includes the agent with KindAgent
+	var foundAgent bool
+	for _, op := range res.Ops {
+		if op.SkillName == "code-reviewer" {
+			foundAgent = true
+			if op.Kind != KindAgent {
+				t.Fatalf("expected op.Kind == KindAgent for code-reviewer, got %q", op.Kind)
+			}
+			if op.Status != OpInstalled {
+				t.Fatalf("expected op.Status == OpInstalled for code-reviewer, got %q", op.Status)
+			}
+		}
+	}
+	if !foundAgent {
+		t.Fatalf("no op found for agent 'code-reviewer' in: %+v", res.Ops)
+	}
+}
+
+func TestApplierApply_AgentFromRegistry_MultipleTargets(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md":         "---\nname: my-skill\n---\n# My Skill\n",
+		"my-skill/agents/helper.md": "# Helper Agent\nI help with things.",
+	})
+
+	cacheDir := t.TempDir()
+	gitReg := &registry.GitRegistry{
+		RegistryName: "test-remote",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "test-remote"),
+		SkillsPath:   ".",
+	}
+
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode","cursor"]
+skills:
+- name: conventional-commits
+agents:
+- name: helper
+  registry: "test-remote/my-skill:agents/helper.md"
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry(), gitReg}
+	a := NewApplier(regs)
+	opts := target.InstallOpts{Force: true}
+	res, err := a.Apply(mfile, opts)
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	// Should exist on both targets
+	for _, dir := range []string{".opencode", ".cursor"} {
+		f := filepath.Join(tmp, dir, "agents", "helper.md")
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("agent not found in %s: %v", dir, err)
+		}
+		if string(data) != "# Helper Agent\nI help with things." {
+			t.Fatalf("unexpected content in %s: %q", dir, string(data))
+		}
+	}
+}
+
+func TestApplierApply_AgentFromRegistry_InvalidFormat(t *testing.T) {
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	// Registry ref with invalid format (no colon separator)
+	content := `targets: ["opencode"]
+skills:
+- name: conventional-commits
+agents:
+- name: bad-ref
+  registry: "invalid-format-no-colon"
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	opts := target.InstallOpts{Force: true}
+	res, err := a.Apply(mfile, opts)
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+
+	// Should have an error op for the bad-ref agent
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected errors for invalid registry format, got none")
+	}
+
+	var foundError bool
+	for _, op := range res.Ops {
+		if op.SkillName == "bad-ref" && op.Status == OpError {
+			foundError = true
+		}
+	}
+	if !foundError {
+		t.Fatalf("expected error op for 'bad-ref', got: %+v", res.Ops)
+	}
+}
+
+func TestApplierApply_AgentFromRegistry_RegistryNotFound(t *testing.T) {
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	// Registry ref to a registry that doesn't exist
+	content := `targets: ["opencode"]
+skills:
+- name: conventional-commits
+agents:
+- name: ghost
+  registry: "nonexistent-reg/some-skill:agents/ghost.md"
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	opts := target.InstallOpts{Force: true}
+	res, err := a.Apply(mfile, opts)
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected errors for nonexistent registry, got none")
+	}
+
+	var foundError bool
+	for _, op := range res.Ops {
+		if op.SkillName == "ghost" && op.Status == OpError {
+			foundError = true
+		}
+	}
+	if !foundError {
+		t.Fatalf("expected error op for 'ghost', got: %+v", res.Ops)
+	}
+}
+
+// --- Kind tracking tests ---
+
+func TestApplierApply_OpsHaveCorrectKind(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Create local agent source
+	agentSrc := filepath.Join(tmp, "agents", "my-agent.md")
+	if err := os.MkdirAll(filepath.Dir(agentSrc), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(agentSrc, []byte("# My Agent"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: conventional-commits
+instructions:
+- name: code-style
+  content: "Use tabs."
+agents:
+- name: my-agent
+  path: ./agents/my-agent.md
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	opts := target.InstallOpts{Force: true}
+	res, err := a.Apply(mfile, opts)
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	// Verify each op has the correct Kind
+	kindMap := map[string]ApplyOpKind{}
+	for _, op := range res.Ops {
+		kindMap[op.SkillName] = op.Kind
+	}
+
+	if kindMap["conventional-commits"] != KindSkill {
+		t.Fatalf("expected KindSkill for conventional-commits, got %q", kindMap["conventional-commits"])
+	}
+	if kindMap["code-style"] != KindInstruction {
+		t.Fatalf("expected KindInstruction for code-style, got %q", kindMap["code-style"])
+	}
+	if kindMap["my-agent"] != KindAgent {
+		t.Fatalf("expected KindAgent for my-agent, got %q", kindMap["my-agent"])
 	}
 }
