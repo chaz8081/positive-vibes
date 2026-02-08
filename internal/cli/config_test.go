@@ -74,13 +74,29 @@ func TestRenderMergedYAML_ContainsAllSections(t *testing.T) {
 
 func TestRenderMergedYAML_IncludesInstructions(t *testing.T) {
 	m := &manifest.Manifest{
-		Skills:       []manifest.SkillRef{{Name: "s"}},
-		Targets:      []string{"opencode"},
-		Instructions: []string{"Use Go modules"},
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "go-modules", Content: "Use Go modules"},
+		},
 	}
 	out := renderMergedYAML(m)
 	assert.Contains(t, out, "instructions:")
+	assert.Contains(t, out, "go-modules")
 	assert.Contains(t, out, "Use Go modules")
+}
+
+func TestRenderMergedYAML_IncludesAgents(t *testing.T) {
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "reviewer", Path: "./agents/reviewer.md"},
+		},
+	}
+	out := renderMergedYAML(m)
+	assert.Contains(t, out, "agents:")
+	assert.Contains(t, out, "reviewer")
 }
 
 // --- annotateManifest tests ---
@@ -166,24 +182,151 @@ func TestAnnotateManifest_LocalOnly(t *testing.T) {
 
 func TestAnnotateManifest_InstructionSources(t *testing.T) {
 	global := &manifest.Manifest{
-		Skills:       []manifest.SkillRef{{Name: "s"}},
-		Targets:      []string{"opencode"},
-		Instructions: []string{"global instruction"},
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "global-inst", Content: "global instruction"},
+		},
 	}
 	local := &manifest.Manifest{
-		Skills:       []manifest.SkillRef{{Name: "s"}},
-		Targets:      []string{"opencode"},
-		Instructions: []string{"local instruction"},
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "local-inst", Content: "local instruction"},
+		},
 	}
 	merged := &manifest.Manifest{
-		Skills:       []manifest.SkillRef{{Name: "s"}},
-		Targets:      []string{"opencode"},
-		Instructions: []string{"global instruction", "local instruction"},
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "global-inst", Content: "global instruction"},
+			{Name: "local-inst", Content: "local instruction"},
+		},
 	}
 
 	out := annotateManifest(global, local, merged)
-	assert.Contains(t, out, "global instruction")
-	assert.Contains(t, out, "local instruction")
+	assert.Contains(t, out, "global-inst")
+	assert.Contains(t, out, "[global]")
+	assert.Contains(t, out, "local-inst")
+	assert.Contains(t, out, "[local]")
+	assert.Contains(t, out, "content:")
+}
+
+func TestAnnotateManifest_InstructionOverride(t *testing.T) {
+	global := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "shared-inst", Content: "old content"},
+		},
+	}
+	local := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "shared-inst", Content: "new content"},
+		},
+	}
+	merged := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "shared-inst", Content: "new content"},
+		},
+	}
+
+	out := annotateManifest(global, local, merged)
+	assert.Contains(t, out, "shared-inst")
+	assert.Contains(t, out, "[local, overrides global]")
+}
+
+func TestAnnotateManifest_InstructionWithPath(t *testing.T) {
+	local := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "path-inst", Path: "./instructions/coding.md"},
+		},
+	}
+
+	out := annotateManifest(nil, local, local)
+	assert.Contains(t, out, "path-inst")
+	assert.Contains(t, out, "path:")
+	assert.Contains(t, out, "./instructions/coding.md")
+}
+
+func TestAnnotateManifest_InstructionWithApplyTo(t *testing.T) {
+	local := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "ts-inst", Content: "Use TypeScript", ApplyTo: "opencode"},
+		},
+	}
+
+	out := annotateManifest(nil, local, local)
+	assert.Contains(t, out, "ts-inst")
+	assert.Contains(t, out, "apply_to:")
+}
+
+func TestAnnotateManifest_AgentSources(t *testing.T) {
+	global := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "global-agent", Path: "./agents/global.md"},
+		},
+	}
+	local := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "local-agent", Registry: "my-registry/agent"},
+		},
+	}
+	merged := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "global-agent", Path: "./agents/global.md"},
+			{Name: "local-agent", Registry: "my-registry/agent"},
+		},
+	}
+
+	out := annotateManifest(global, local, merged)
+	assert.Contains(t, out, "agents:")
+	assert.Contains(t, out, "global-agent")
+	assert.Contains(t, out, "[global]")
+	assert.Contains(t, out, "local-agent")
+	assert.Contains(t, out, "[local]")
+}
+
+func TestAnnotateManifest_AgentOverride(t *testing.T) {
+	global := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "shared-agent", Path: "/old/path"},
+		},
+	}
+	local := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "shared-agent", Path: "/new/path"},
+		},
+	}
+	merged := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "shared-agent", Path: "/new/path"},
+		},
+	}
+
+	out := annotateManifest(global, local, merged)
+	assert.Contains(t, out, "shared-agent")
+	assert.Contains(t, out, "[local, overrides global]")
 }
 
 // --- validateConfig tests ---
@@ -289,4 +432,85 @@ func TestValidateConfig_NoTargets(t *testing.T) {
 
 	result := validateConfig(m, embeddedSkills)
 	assert.False(t, result.ok())
+}
+
+func TestValidateConfig_InstructionPathExists(t *testing.T) {
+	dir := t.TempDir()
+	instFile := filepath.Join(dir, "instructions.md")
+	require.NoError(t, os.WriteFile(instFile, []byte("# Instructions"), 0o644))
+
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "my-inst", Path: instFile},
+		},
+	}
+
+	result := validateConfig(m, []string{"s"})
+	// Should not report a problem for instruction path
+	for _, p := range result.problems {
+		assert.NotEqual(t, "my-inst", p.field, "should not report problem for existing instruction path")
+	}
+}
+
+func TestValidateConfig_InstructionPathMissing(t *testing.T) {
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{
+			{Name: "bad-inst", Path: "/nonexistent/instructions.md"},
+		},
+	}
+
+	result := validateConfig(m, []string{"s"})
+	assert.False(t, result.ok())
+	found := false
+	for _, p := range result.problems {
+		if p.field == "bad-inst" {
+			found = true
+			assert.Contains(t, p.message, "path not found")
+		}
+	}
+	assert.True(t, found, "should report missing instruction path")
+}
+
+func TestValidateConfig_AgentPathExists(t *testing.T) {
+	dir := t.TempDir()
+	agentFile := filepath.Join(dir, "agent.md")
+	require.NoError(t, os.WriteFile(agentFile, []byte("# Agent"), 0o644))
+
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "my-agent", Path: agentFile},
+		},
+	}
+
+	result := validateConfig(m, []string{"s"})
+	for _, p := range result.problems {
+		assert.NotEqual(t, "my-agent", p.field, "should not report problem for existing agent path")
+	}
+}
+
+func TestValidateConfig_AgentPathMissing(t *testing.T) {
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "s"}},
+		Targets: []string{"opencode"},
+		Agents: []manifest.AgentRef{
+			{Name: "bad-agent", Path: "/nonexistent/agent.md"},
+		},
+	}
+
+	result := validateConfig(m, []string{"s"})
+	assert.False(t, result.ok())
+	found := false
+	for _, p := range result.problems {
+		if p.field == "bad-agent" {
+			found = true
+			assert.Contains(t, p.message, "path not found")
+		}
+	}
+	assert.True(t, found, "should report missing agent path")
 }

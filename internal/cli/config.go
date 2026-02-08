@@ -103,12 +103,26 @@ func annotateManifest(global, local, merged *manifest.Manifest) string {
 	localInstructions := make(map[string]bool)
 	if global != nil {
 		for _, i := range global.Instructions {
-			globalInstructions[i] = true
+			globalInstructions[i.Name] = true
 		}
 	}
 	if local != nil {
 		for _, i := range local.Instructions {
-			localInstructions[i] = true
+			localInstructions[i.Name] = true
+		}
+	}
+
+	// Build lookup sets for agents
+	globalAgents := make(map[string]bool)
+	localAgents := make(map[string]bool)
+	if global != nil {
+		for _, a := range global.Agents {
+			globalAgents[a.Name] = true
+		}
+	}
+	if local != nil {
+		for _, a := range local.Agents {
+			localAgents[a.Name] = true
 		}
 	}
 
@@ -154,8 +168,30 @@ func annotateManifest(global, local, merged *manifest.Manifest) string {
 	if len(merged.Instructions) > 0 {
 		b.WriteString("instructions:\n")
 		for _, inst := range merged.Instructions {
-			tag := sourceTag(globalInstructions[inst], localInstructions[inst])
-			b.WriteString(fmt.Sprintf("  - %q  %s\n", inst, tag))
+			tag := sourceTag(globalInstructions[inst.Name], localInstructions[inst.Name])
+			b.WriteString(fmt.Sprintf("  - name: %s  %s\n", inst.Name, tag))
+			if inst.Content != "" {
+				b.WriteString(fmt.Sprintf("    content: %q\n", inst.Content))
+			} else if inst.Path != "" {
+				b.WriteString(fmt.Sprintf("    path: %s\n", inst.Path))
+			}
+			if inst.ApplyTo != "" {
+				b.WriteString(fmt.Sprintf("    apply_to: %q\n", inst.ApplyTo))
+			}
+		}
+	}
+
+	// Agents
+	if len(merged.Agents) > 0 {
+		b.WriteString("agents:\n")
+		for _, a := range merged.Agents {
+			tag := sourceTag(globalAgents[a.Name], localAgents[a.Name])
+			b.WriteString(fmt.Sprintf("  - name: %s  %s\n", a.Name, tag))
+			if a.Path != "" {
+				b.WriteString(fmt.Sprintf("    path: %s\n", a.Path))
+			} else if a.Registry != "" {
+				b.WriteString(fmt.Sprintf("    registry: %s\n", a.Registry))
+			}
 		}
 	}
 
@@ -236,6 +272,24 @@ func validateConfig(m *manifest.Manifest, embeddedSkills []string) *configValida
 			}
 		} else if !embeddedSet[s.Name] {
 			result.add(s.Name, "not found in any registry")
+		}
+	}
+
+	// Check each instruction with a path
+	for _, inst := range m.Instructions {
+		if inst.Path != "" {
+			if _, err := os.Stat(inst.Path); err != nil {
+				result.add(inst.Name, "path not found: "+inst.Path)
+			}
+		}
+	}
+
+	// Check each agent with a path
+	for _, a := range m.Agents {
+		if a.Path != "" {
+			if _, err := os.Stat(a.Path); err != nil {
+				result.add(a.Name, "path not found: "+a.Path)
+			}
 		}
 	}
 

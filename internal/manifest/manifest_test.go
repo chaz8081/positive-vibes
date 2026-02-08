@@ -22,8 +22,17 @@ skills:
     path: ./local-skills/my-custom-skill
 
 instructions:
-  - "Always use TypeScript for frontend code"
-  - "Prefer functional components over class components"
+  - name: typescript-preference
+    content: "Always use TypeScript for frontend code"
+  - name: functional-components
+    content: "Prefer functional components over class components"
+    apply_to: "**/*.tsx"
+
+agents:
+  - name: reviewer
+    registry: awesome-copilot
+  - name: local-agent
+    path: ./agents/local-agent.md
 
 targets:
   - vscode-copilot
@@ -48,7 +57,17 @@ func TestLoadManifest_Valid(t *testing.T) {
 	assert.Equal(t, "./local-skills/my-custom-skill", m.Skills[2].Path)
 
 	assert.Len(t, m.Instructions, 2)
-	assert.Contains(t, m.Instructions[0], "TypeScript")
+	assert.Equal(t, "typescript-preference", m.Instructions[0].Name)
+	assert.Equal(t, "Always use TypeScript for frontend code", m.Instructions[0].Content)
+	assert.Empty(t, m.Instructions[0].ApplyTo)
+	assert.Equal(t, "functional-components", m.Instructions[1].Name)
+	assert.Equal(t, "**/*.tsx", m.Instructions[1].ApplyTo)
+
+	assert.Len(t, m.Agents, 2)
+	assert.Equal(t, "reviewer", m.Agents[0].Name)
+	assert.Equal(t, "awesome-copilot", m.Agents[0].Registry)
+	assert.Equal(t, "local-agent", m.Agents[1].Name)
+	assert.Equal(t, "./agents/local-agent.md", m.Agents[1].Path)
 
 	assert.Len(t, m.Targets, 3)
 	assert.Contains(t, m.Targets, "vscode-copilot")
@@ -160,7 +179,7 @@ func TestSaveManifest(t *testing.T) {
 	m := &Manifest{
 		Registries:   []RegistryRef{{Name: "r", URL: "https://r", Ref: "latest"}},
 		Skills:       []SkillRef{{Name: "s", Version: "v1", Path: "./p"}},
-		Instructions: []string{"do the thing"},
+		Instructions: []InstructionRef{{Name: "inst", Content: "do the thing"}},
 		Targets:      []string{"vscode-copilot"},
 	}
 	dir := t.TempDir()
@@ -174,7 +193,8 @@ func TestSaveManifest(t *testing.T) {
 
 	assert.Equal(t, m.Registries[0].Name, m2.Registries[0].Name)
 	assert.Equal(t, m.Skills[0].Name, m2.Skills[0].Name)
-	assert.Equal(t, m.Instructions[0], m2.Instructions[0])
+	assert.Equal(t, m.Instructions[0].Name, m2.Instructions[0].Name)
+	assert.Equal(t, m.Instructions[0].Content, m2.Instructions[0].Content)
 	assert.Equal(t, m.Targets[0], m2.Targets[0])
 
 	// ensure file exists
@@ -315,7 +335,8 @@ skills:
 targets:
   - cursor
 instructions:
-  - "global instruction"
+  - name: global-inst
+    content: "global instruction"
 `
 	globalPath := filepath.Join(globalDir, "vibes.yml")
 	require.NoError(t, os.WriteFile(globalPath, []byte(content), 0o644))
@@ -329,7 +350,9 @@ instructions:
 	assert.Len(t, m.Registries, 1)
 	assert.Equal(t, "global-reg", m.Registries[0].Name)
 	assert.Equal(t, []string{"cursor"}, m.Targets)
-	assert.Equal(t, []string{"global instruction"}, m.Instructions)
+	require.Len(t, m.Instructions, 1)
+	assert.Equal(t, "global-inst", m.Instructions[0].Name)
+	assert.Equal(t, "global instruction", m.Instructions[0].Content)
 }
 
 func TestLoadMergedManifest_MergesRegistriesByName(t *testing.T) {
@@ -443,7 +466,7 @@ targets:
 	assert.Equal(t, []string{"vscode-copilot"}, m.Targets)
 }
 
-func TestLoadMergedManifest_InstructionsConcatenated(t *testing.T) {
+func TestLoadMergedManifest_InstructionsMergedByName(t *testing.T) {
 	projectDir := t.TempDir()
 	globalDir := t.TempDir()
 
@@ -452,15 +475,20 @@ func TestLoadMergedManifest_InstructionsConcatenated(t *testing.T) {
 targets:
   - opencode
 instructions:
-  - "global first"
-  - "global second"
+  - name: global-first
+    content: "global first content"
+  - name: shared-inst
+    content: "global version"
 `
 	projectContent := `skills:
   - name: s
 targets:
   - opencode
 instructions:
-  - "project first"
+  - name: shared-inst
+    content: "project version"
+  - name: project-only
+    content: "project only content"
 `
 	globalPath := filepath.Join(globalDir, "vibes.yml")
 	require.NoError(t, os.WriteFile(globalPath, []byte(globalContent), 0o644))
@@ -469,8 +497,67 @@ instructions:
 	m, err := LoadMergedManifest(projectDir, globalPath)
 	require.NoError(t, err)
 
-	// Instructions concatenated: global first, then project
-	assert.Equal(t, []string{"global first", "global second", "project first"}, m.Instructions)
+	// Should have 3 instructions: global-first, shared-inst (project wins), project-only
+	require.Len(t, m.Instructions, 3)
+
+	instMap := map[string]InstructionRef{}
+	for _, inst := range m.Instructions {
+		instMap[inst.Name] = inst
+	}
+	// shared-inst should use project content (project overrides)
+	assert.Equal(t, "project version", instMap["shared-inst"].Content)
+	assert.Equal(t, "global first content", instMap["global-first"].Content)
+	assert.Equal(t, "project only content", instMap["project-only"].Content)
+
+	// Order: global-first, shared-inst, project-only
+	assert.Equal(t, "global-first", m.Instructions[0].Name)
+	assert.Equal(t, "shared-inst", m.Instructions[1].Name)
+	assert.Equal(t, "project-only", m.Instructions[2].Name)
+}
+
+func TestLoadMergedManifest_AgentsMergedByName(t *testing.T) {
+	projectDir := t.TempDir()
+	globalDir := t.TempDir()
+
+	globalContent := `skills:
+  - name: s
+targets:
+  - opencode
+agents:
+  - name: shared-agent
+    registry: global-reg
+  - name: global-only-agent
+    registry: global-reg
+`
+	projectContent := `skills:
+  - name: s
+targets:
+  - opencode
+agents:
+  - name: shared-agent
+    path: ./local-agent.md
+  - name: project-only-agent
+    path: ./project-agent.md
+`
+	globalPath := filepath.Join(globalDir, "vibes.yml")
+	require.NoError(t, os.WriteFile(globalPath, []byte(globalContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "vibes.yml"), []byte(projectContent), 0o644))
+
+	m, err := LoadMergedManifest(projectDir, globalPath)
+	require.NoError(t, err)
+
+	// Should have 3 agents: shared-agent (project wins), global-only-agent, project-only-agent
+	require.Len(t, m.Agents, 3)
+
+	agentMap := map[string]AgentRef{}
+	for _, a := range m.Agents {
+		agentMap[a.Name] = a
+	}
+	// shared-agent should use project (path overrides registry)
+	assert.Equal(t, "./local-agent.md", agentMap["shared-agent"].Path)
+	assert.Empty(t, agentMap["shared-agent"].Registry)
+	assert.Equal(t, "global-reg", agentMap["global-only-agent"].Registry)
+	assert.Equal(t, "./project-agent.md", agentMap["project-only-agent"].Path)
 }
 
 func TestLoadMergedManifest_NeitherExists(t *testing.T) {
@@ -480,4 +567,159 @@ func TestLoadMergedManifest_NeitherExists(t *testing.T) {
 	_, err := LoadMergedManifest(projectDir, globalPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no manifest found")
+}
+
+// --- InstructionRef validation tests ---
+
+func TestValidate_InstructionRef_Valid(t *testing.T) {
+	m := &Manifest{
+		Skills:       []SkillRef{{Name: "x"}},
+		Targets:      []string{"opencode"},
+		Instructions: []InstructionRef{{Name: "inst", Content: "do stuff"}},
+	}
+	require.NoError(t, m.Validate())
+}
+
+func TestValidate_InstructionRef_ValidWithPath(t *testing.T) {
+	m := &Manifest{
+		Skills:       []SkillRef{{Name: "x"}},
+		Targets:      []string{"opencode"},
+		Instructions: []InstructionRef{{Name: "inst", Path: "./instructions/foo.md"}},
+	}
+	require.NoError(t, m.Validate())
+}
+
+func TestValidate_InstructionRef_MissingName(t *testing.T) {
+	m := &Manifest{
+		Skills:       []SkillRef{{Name: "x"}},
+		Targets:      []string{"opencode"},
+		Instructions: []InstructionRef{{Content: "do stuff"}},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name")
+}
+
+func TestValidate_InstructionRef_ContentAndPath(t *testing.T) {
+	m := &Manifest{
+		Skills:       []SkillRef{{Name: "x"}},
+		Targets:      []string{"opencode"},
+		Instructions: []InstructionRef{{Name: "inst", Content: "stuff", Path: "./foo.md"}},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "content")
+}
+
+func TestValidate_InstructionRef_NeitherContentNorPath(t *testing.T) {
+	m := &Manifest{
+		Skills:       []SkillRef{{Name: "x"}},
+		Targets:      []string{"opencode"},
+		Instructions: []InstructionRef{{Name: "inst"}},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "content")
+}
+
+// --- AgentRef validation tests ---
+
+func TestValidate_AgentRef_ValidWithRegistry(t *testing.T) {
+	m := &Manifest{
+		Skills:  []SkillRef{{Name: "x"}},
+		Targets: []string{"opencode"},
+		Agents:  []AgentRef{{Name: "agent", Registry: "my-reg"}},
+	}
+	require.NoError(t, m.Validate())
+}
+
+func TestValidate_AgentRef_ValidWithPath(t *testing.T) {
+	m := &Manifest{
+		Skills:  []SkillRef{{Name: "x"}},
+		Targets: []string{"opencode"},
+		Agents:  []AgentRef{{Name: "agent", Path: "./agents/foo.md"}},
+	}
+	require.NoError(t, m.Validate())
+}
+
+func TestValidate_AgentRef_MissingName(t *testing.T) {
+	m := &Manifest{
+		Skills:  []SkillRef{{Name: "x"}},
+		Targets: []string{"opencode"},
+		Agents:  []AgentRef{{Registry: "my-reg"}},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name")
+}
+
+func TestValidate_AgentRef_PathAndRegistry(t *testing.T) {
+	m := &Manifest{
+		Skills:  []SkillRef{{Name: "x"}},
+		Targets: []string{"opencode"},
+		Agents:  []AgentRef{{Name: "agent", Path: "./foo.md", Registry: "reg"}},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path")
+}
+
+func TestValidate_AgentRef_NeitherPathNorRegistry(t *testing.T) {
+	m := &Manifest{
+		Skills:  []SkillRef{{Name: "x"}},
+		Targets: []string{"opencode"},
+		Agents:  []AgentRef{{Name: "agent"}},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path")
+}
+
+// --- InstructionRef/AgentRef YAML parsing tests ---
+
+func TestLoadManifest_InstructionRef(t *testing.T) {
+	yamlStr := `skills:
+  - name: s
+targets:
+  - opencode
+instructions:
+  - name: ts-pref
+    content: "Use TypeScript"
+    apply_to: "**/*.ts"
+  - name: from-file
+    path: ./instructions/rules.md
+`
+	m, err := LoadManifestFromBytes([]byte(yamlStr))
+	require.NoError(t, err)
+
+	require.Len(t, m.Instructions, 2)
+	assert.Equal(t, "ts-pref", m.Instructions[0].Name)
+	assert.Equal(t, "Use TypeScript", m.Instructions[0].Content)
+	assert.Equal(t, "**/*.ts", m.Instructions[0].ApplyTo)
+	assert.Equal(t, "from-file", m.Instructions[1].Name)
+	assert.Equal(t, "./instructions/rules.md", m.Instructions[1].Path)
+	assert.Empty(t, m.Instructions[1].Content)
+}
+
+func TestLoadManifest_AgentRef(t *testing.T) {
+	yamlStr := `skills:
+  - name: s
+targets:
+  - opencode
+agents:
+  - name: reviewer
+    registry: awesome-copilot
+  - name: local-bot
+    path: ./agents/bot.md
+`
+	m, err := LoadManifestFromBytes([]byte(yamlStr))
+	require.NoError(t, err)
+
+	require.Len(t, m.Agents, 2)
+	assert.Equal(t, "reviewer", m.Agents[0].Name)
+	assert.Equal(t, "awesome-copilot", m.Agents[0].Registry)
+	assert.Empty(t, m.Agents[0].Path)
+	assert.Equal(t, "local-bot", m.Agents[1].Name)
+	assert.Equal(t, "./agents/bot.md", m.Agents[1].Path)
+	assert.Empty(t, m.Agents[1].Registry)
 }

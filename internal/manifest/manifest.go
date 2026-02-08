@@ -17,10 +17,11 @@ var ValidTargets = []string{"vscode-copilot", "opencode", "cursor"}
 
 // Manifest represents a vibes.yaml file.
 type Manifest struct {
-	Registries   []RegistryRef `yaml:"registries,omitempty"`
-	Skills       []SkillRef    `yaml:"skills"`
-	Instructions []string      `yaml:"instructions,omitempty"`
-	Targets      []string      `yaml:"targets"`
+	Registries   []RegistryRef    `yaml:"registries,omitempty"`
+	Skills       []SkillRef       `yaml:"skills"`
+	Instructions []InstructionRef `yaml:"instructions,omitempty"`
+	Agents       []AgentRef       `yaml:"agents,omitempty"`
+	Targets      []string         `yaml:"targets"`
 }
 
 // SkillRef is a reference to a skill in the manifest.
@@ -28,6 +29,21 @@ type SkillRef struct {
 	Name    string `yaml:"name"`
 	Path    string `yaml:"path,omitempty"`
 	Version string `yaml:"version,omitempty"`
+}
+
+// InstructionRef is a reference to an instruction in the manifest.
+type InstructionRef struct {
+	Name    string `yaml:"name"`
+	Content string `yaml:"content,omitempty"`
+	Path    string `yaml:"path,omitempty"`
+	ApplyTo string `yaml:"apply_to,omitempty"`
+}
+
+// AgentRef is a reference to an agent in the manifest.
+type AgentRef struct {
+	Name     string `yaml:"name"`
+	Path     string `yaml:"path,omitempty"`
+	Registry string `yaml:"registry,omitempty"`
 }
 
 // RegistryRef points to a remote git repository of skills.
@@ -78,7 +94,7 @@ func SaveManifest(m *Manifest, path string) error {
 }
 
 // Validate checks the manifest for correctness.
-// Returns error if: no skills defined, or invalid target name.
+// Returns error if: no skills defined, invalid target name, or invalid instruction/agent refs.
 func (m *Manifest) Validate() error {
 	if len(m.Skills) == 0 {
 		return fmt.Errorf("manifest must define at least one skill")
@@ -94,6 +110,28 @@ func (m *Manifest) Validate() error {
 	for _, r := range m.Registries {
 		if r.Ref == "" {
 			return fmt.Errorf("registry %q must specify a ref (use \"latest\" to track the default branch)", r.Name)
+		}
+	}
+	for i, inst := range m.Instructions {
+		if inst.Name == "" {
+			return fmt.Errorf("instruction[%d]: name is required", i)
+		}
+		if inst.Content != "" && inst.Path != "" {
+			return fmt.Errorf("instruction %q: content and path are mutually exclusive", inst.Name)
+		}
+		if inst.Content == "" && inst.Path == "" {
+			return fmt.Errorf("instruction %q: one of content or path is required", inst.Name)
+		}
+	}
+	for i, agent := range m.Agents {
+		if agent.Name == "" {
+			return fmt.Errorf("agent[%d]: name is required", i)
+		}
+		if agent.Path != "" && agent.Registry != "" {
+			return fmt.Errorf("agent %q: path and registry are mutually exclusive", agent.Name)
+		}
+		if agent.Path == "" && agent.Registry == "" {
+			return fmt.Errorf("agent %q: one of path or registry is required", agent.Name)
 		}
 	}
 	return nil
@@ -145,8 +183,9 @@ func SaveManifestWithComments(m *Manifest, path string, header string) error {
 // Merge rules:
 //   - Registries: merged by Name; project overrides global for same name
 //   - Skills: merged by Name; project overrides global for same name
+//   - Instructions: merged by Name; project overrides global for same name
+//   - Agents: merged by Name; project overrides global for same name
 //   - Targets: project targets override global (no merge)
-//   - Instructions: concatenated (global first, then project)
 //
 // Returns error only if neither global nor project manifest exists.
 func LoadMergedManifest(projectDir string, globalPath string) (*Manifest, error) {
@@ -222,11 +261,44 @@ func LoadMergedManifest(projectDir string, globalPath string) (*Manifest, error)
 		merged.Targets = global.Targets
 	}
 
-	// Instructions: concatenate (global first, then project)
-	merged.Instructions = append(merged.Instructions, global.Instructions...)
-	merged.Instructions = append(merged.Instructions, project.Instructions...)
+	// Instructions: merge by Name, project wins
+	instMap := make(map[string]InstructionRef)
+	var instOrder []string
+	for _, inst := range global.Instructions {
+		instMap[inst.Name] = inst
+		instOrder = append(instOrder, inst.Name)
+	}
+	for _, inst := range project.Instructions {
+		if _, exists := instMap[inst.Name]; !exists {
+			instOrder = append(instOrder, inst.Name)
+		}
+		instMap[inst.Name] = inst // project overrides
+	}
+	for _, name := range instOrder {
+		merged.Instructions = append(merged.Instructions, instMap[name])
+	}
 	if len(merged.Instructions) == 0 {
 		merged.Instructions = nil
+	}
+
+	// Agents: merge by Name, project wins
+	agentMap := make(map[string]AgentRef)
+	var agentOrder []string
+	for _, a := range global.Agents {
+		agentMap[a.Name] = a
+		agentOrder = append(agentOrder, a.Name)
+	}
+	for _, a := range project.Agents {
+		if _, exists := agentMap[a.Name]; !exists {
+			agentOrder = append(agentOrder, a.Name)
+		}
+		agentMap[a.Name] = a // project overrides
+	}
+	for _, name := range agentOrder {
+		merged.Agents = append(merged.Agents, agentMap[name])
+	}
+	if len(merged.Agents) == 0 {
+		merged.Agents = nil
 	}
 
 	return merged, nil

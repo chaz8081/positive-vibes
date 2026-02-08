@@ -54,15 +54,46 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 
 	// Instructions (commented-out example since init doesn't generate any)
 	if len(m.Instructions) > 0 {
-		b.WriteString("# Free-form instructions appended to each target.\n")
+		b.WriteString("# Instructions appended to each target. Use name + content (inline) or path (file).\n")
 		b.WriteString("instructions:\n")
 		for _, inst := range m.Instructions {
-			b.WriteString(fmt.Sprintf("  - %q\n", inst))
+			b.WriteString(fmt.Sprintf("  - name: %s\n", inst.Name))
+			if inst.Content != "" {
+				b.WriteString(fmt.Sprintf("    content: %q\n", inst.Content))
+			} else if inst.Path != "" {
+				b.WriteString(fmt.Sprintf("    path: %s\n", inst.Path))
+			}
+			if inst.ApplyTo != "" {
+				b.WriteString(fmt.Sprintf("    apply_to: %q\n", inst.ApplyTo))
+			}
 		}
 	} else {
-		b.WriteString("# Free-form instructions appended to each target.\n")
+		b.WriteString("# Instructions appended to each target. Use name + content (inline) or path (file).\n")
 		b.WriteString("# instructions:\n")
-		b.WriteString("#   - \"Always use TypeScript for frontend code\"\n")
+		b.WriteString("#   - name: coding-style\n")
+		b.WriteString("#     content: \"Always use TypeScript for frontend code\"\n")
+		b.WriteString("#   - name: project-guide\n")
+		b.WriteString("#     path: ./instructions/guide.md\n")
+	}
+	b.WriteString("\n")
+
+	// Agents (commented-out example since init doesn't generate any)
+	if len(m.Agents) > 0 {
+		b.WriteString("# Agents to install. Use path (local file) or registry (remote).\n")
+		b.WriteString("agents:\n")
+		for _, a := range m.Agents {
+			b.WriteString(fmt.Sprintf("  - name: %s\n", a.Name))
+			if a.Path != "" {
+				b.WriteString(fmt.Sprintf("    path: %s\n", a.Path))
+			} else if a.Registry != "" {
+				b.WriteString(fmt.Sprintf("    registry: %s\n", a.Registry))
+			}
+		}
+	} else {
+		b.WriteString("# Agents to install. Use path (local file) or registry (remote).\n")
+		b.WriteString("# agents:\n")
+		b.WriteString("#   - name: code-reviewer\n")
+		b.WriteString("#     path: ./agents/reviewer.md\n")
 	}
 	b.WriteString("\n")
 
