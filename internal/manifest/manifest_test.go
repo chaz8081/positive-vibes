@@ -158,7 +158,7 @@ func TestValidate_Valid(t *testing.T) {
 
 func TestSaveManifest(t *testing.T) {
 	m := &Manifest{
-		Registries:   []RegistryRef{{Name: "r", URL: "https://r"}},
+		Registries:   []RegistryRef{{Name: "r", URL: "https://r", Ref: "latest"}},
 		Skills:       []SkillRef{{Name: "s", Version: "v1", Path: "./p"}},
 		Instructions: []string{"do the thing"},
 		Targets:      []string{"vscode-copilot"},
@@ -309,6 +309,7 @@ func TestLoadMergedManifest_GlobalOnly(t *testing.T) {
 	content := `registries:
   - name: global-reg
     url: https://example.com/global
+    ref: latest
 skills:
   - name: global-skill
 targets:
@@ -338,8 +339,10 @@ func TestLoadMergedManifest_MergesRegistriesByName(t *testing.T) {
 	globalContent := `registries:
   - name: shared-reg
     url: https://global.example.com
+    ref: latest
   - name: global-only
     url: https://global-only.example.com
+    ref: latest
 skills:
   - name: placeholder
 targets:
@@ -348,8 +351,10 @@ targets:
 	projectContent := `registries:
   - name: shared-reg
     url: https://project.example.com
+    ref: latest
   - name: project-only
     url: https://project-only.example.com
+    ref: latest
 skills:
   - name: placeholder
 targets:
