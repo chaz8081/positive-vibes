@@ -59,6 +59,7 @@ This reads your manifest and installs skills into all your target tools' directo
 registries:
   - name: awesome-copilot
     url: https://github.com/github/awesome-copilot
+    ref: latest
     paths:
       skills: skills/
 
@@ -100,6 +101,57 @@ When both exist, they are merged:
 
 The global config path respects `$XDG_CONFIG_HOME` if set.
 
+## Registry Versioning
+
+Every registry entry requires a `ref` field that controls which version of the registry is used. This makes your setup reproducible and explicit.
+
+### Ref types
+
+| Ref value | Behavior |
+| --------- | -------- |
+| `latest`  | Track the registry's default branch. `vibes apply --refresh` pulls new changes. |
+| Branch name (e.g. `main`, `develop`) | Pin to a specific branch. Refresh is a no-op. |
+| Tag name (e.g. `v1.2.0`) | Pin to a tagged release. Refresh is a no-op. |
+| Commit SHA (7-40 hex chars) | Pin to an exact commit. Refresh is a no-op. |
+
+### Examples
+
+```yaml
+registries:
+  # Track the latest skills (auto-updates on refresh)
+  - name: awesome-copilot
+    url: https://github.com/github/awesome-copilot
+    ref: latest
+    paths:
+      skills: skills/
+
+  # Pin to a stable release
+  - name: team-skills
+    url: https://github.com/myorg/team-skills
+    ref: v2.1.0
+
+  # Pin to an exact commit for reproducibility
+  - name: audited-skills
+    url: https://github.com/myorg/audited-skills
+    ref: a1b2c3d4e5f6
+```
+
+### How pinning works
+
+- **`latest`**: Clones the default branch. Running `vibes apply --refresh` pulls new commits, so you always get the newest skills.
+- **Pinned refs** (branch, tag, or SHA): The registry is cloned once at that ref and cached. Refresh does nothing -- to update, change the `ref` value in your manifest.
+- If a clone fails but a previous cache exists, the cached copy is used as a fallback.
+
+### Migrating existing manifests
+
+If you have a `vibes.yml` without `ref` on a registry, validation will fail with a helpful message:
+
+```
+registry "awesome-copilot" must specify a ref (use "latest" to track the default branch)
+```
+
+Add `ref: latest` to preserve the previous behavior.
+
 ## Commands
 
 | Command                 | Description                                     |
@@ -110,6 +162,8 @@ The global config path respects `$XDG_CONFIG_HOME` if set.
 | `vibes apply --force`   | Overwrite existing skills                       |
 | `vibes apply --link`    | Use symlinks instead of copies                  |
 | `vibes apply --refresh` | Pull latest from git registries before applying |
+| `vibes config show`     | Show merged config with source annotations      |
+| `vibes config validate` | Validate manifest and check for issues          |
 | `vibes generate <desc>` | Generate a custom skill from a description      |
 
 ## How Skills Work

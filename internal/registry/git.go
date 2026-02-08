@@ -95,6 +95,9 @@ func (r *GitRegistry) ensureCache() error {
 			if _, statErr := os.Stat(r.CachePath); statErr == nil {
 				return nil
 			}
+			if r.isPinned() && !isSHA(r.Ref) {
+				return fmt.Errorf("registry %q: ref %q not found as branch or tag in %s", r.RegistryName, r.Ref, r.URL)
+			}
 			return fmt.Errorf("git clone %s: %w", r.URL, err)
 		}
 	}
@@ -123,7 +126,7 @@ func (r *GitRegistry) ensureCache() error {
 			Hash: plumbing.NewHash(r.Ref),
 		})
 		if err != nil {
-			return fmt.Errorf("checkout %s: %w", r.Ref, err)
+			return fmt.Errorf("registry %q: commit %s not found: %w", r.RegistryName, r.Ref, err)
 		}
 	}
 

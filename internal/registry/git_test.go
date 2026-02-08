@@ -507,3 +507,87 @@ func TestGitRegistry_Refresh_LatestRef_PullsUpdates(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "added-skill", sk.Name)
 }
+
+// --- Edge case tests ---
+
+func TestGitRegistry_Fetch_NonexistentBranchOrTagRef(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"skill-a": "---\nname: skill-a\n---\n# A\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "bad-ref-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "bad-ref-reg"),
+		SkillsPath:   ".",
+		Ref:          "nonexistent-branch-or-tag",
+	}
+
+	_, _, err := reg.Fetch("skill-a")
+	require.Error(t, err)
+	// Error should mention the ref and registry name so users know what to fix
+	assert.Contains(t, err.Error(), "nonexistent-branch-or-tag")
+	assert.Contains(t, err.Error(), "bad-ref-reg")
+}
+
+func TestGitRegistry_Fetch_NonexistentSHARef(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"skill-a": "---\nname: skill-a\n---\n# A\n",
+	})
+
+	cacheDir := t.TempDir()
+	// A valid hex string that doesn't correspond to any commit
+	fakeSHA := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	reg := &GitRegistry{
+		RegistryName: "bad-sha-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "bad-sha-reg"),
+		SkillsPath:   ".",
+		Ref:          fakeSHA,
+	}
+
+	_, _, err := reg.Fetch("skill-a")
+	require.Error(t, err)
+	// Error should mention the SHA and registry name
+	assert.Contains(t, err.Error(), fakeSHA)
+	assert.Contains(t, err.Error(), "bad-sha-reg")
+}
+
+func TestGitRegistry_Fetch_PinnedRef_FallsBackToCache(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"cached-skill": "---\nname: cached-skill\n---\n# Cached\n",
+	})
+
+	run := makeGitRunner(t, repoDir)
+	run("tag", "v1.0.0")
+
+	cacheDir := t.TempDir()
+	cachePath := filepath.Join(cacheDir, "fallback-reg")
+
+	// First: clone successfully with the real URL
+	reg := &GitRegistry{
+		RegistryName: "fallback-reg",
+		URL:          repoDir,
+		CachePath:    cachePath,
+		SkillsPath:   ".",
+		Ref:          "v1.0.0",
+	}
+	sk, _, err := reg.Fetch("cached-skill")
+	require.NoError(t, err)
+	assert.Equal(t, "cached-skill", sk.Name)
+
+	// Now: simulate network failure by pointing at invalid URL but keeping cache
+	reg2 := &GitRegistry{
+		RegistryName: "fallback-reg",
+		URL:          "/nonexistent/broken/repo",
+		CachePath:    cachePath,
+		SkillsPath:   ".",
+		Ref:          "v1.0.0",
+	}
+
+	// Should succeed using the existing cache
+	sk2, _, err := reg2.Fetch("cached-skill")
+	require.NoError(t, err)
+	assert.Equal(t, "cached-skill", sk2.Name)
+}
