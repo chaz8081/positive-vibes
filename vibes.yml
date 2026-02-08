@@ -1,0 +1,26 @@
+# vibes.yml - positive-vibes project configuration
+# Run 'vibes apply' to sync skills and instructions to all targets.
+# Global config (~/.config/positive-vibes/vibes.yml) is merged with this file.
+
+# Remote skill registries (git repos). Project entries override global by name.
+registries:
+  - name: awesome-copilot
+    url: https://github.com/github/awesome-copilot
+    ref: latest
+    paths:
+      skills: skills/
+
+# Skills to install. Use name (from registry) or path (local directory).
+skills:
+  - name: conventional-commits
+  - name: code-review
+
+# Free-form instructions appended to each target.
+# instructions:
+#   - "Always use TypeScript for frontend code"
+
+# AI tools to sync into. Valid: vscode-copilot, opencode, cursor
+targets:
+  - vscode-copilot
+  - opencode
+  - cursor

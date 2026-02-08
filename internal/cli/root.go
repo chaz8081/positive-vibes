@@ -12,15 +12,15 @@ import (
 
 var (
 	rootCmd = &cobra.Command{
-		Use:   "vibes",
+		Use:   "positive-vibes",
 		Short: "positive-vibes - harmonize your AI tooling",
 		Long: `positive-vibes helps align your AI tooling across platforms.
 Manage Agent Skills and Instructions from a single source of truth
 (vibes.yml) and keep your dev setup in sync.
 
   Examples:
-  vibes init    # create a vibes.yml
-  vibes apply   # push local vibes to supported platforms
+  positive-vibes init    # create a vibes.yml
+  positive-vibes apply   # push local vibes to supported platforms
 `,
 		// Default action shows help
 		Run: func(cmd *cobra.Command, args []string) {
@@ -52,7 +52,7 @@ func Verbose() bool { return verbose }
 // helper for internal debug prints
 func debugf(format string, a ...interface{}) {
 	if verbose {
-		fmt.Fprintf(os.Stderr, "[vibes] "+format+"\n", a...)
+		fmt.Fprintf(os.Stderr, "[positive-vibes] "+format+"\n", a...)
 	}
 }
 
@@ -89,6 +89,7 @@ func gitRegistriesFromManifest(m *manifest.Manifest) []registry.SkillSource {
 			URL:          r.URL,
 			CachePath:    defaultCachePath(r.Name),
 			SkillsPath:   r.SkillsPath(),
+			Ref:          r.Ref,
 		})
 	}
 	return sources

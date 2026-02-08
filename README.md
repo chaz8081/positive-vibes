@@ -21,8 +21,8 @@ go install github.com/chaz8081/positive-vibes/cmd/positive-vibes@latest
 ```bash
 git clone https://github.com/chaz8081/positive-vibes.git
 cd positive-vibes
-go build -o vibes ./cmd/positive-vibes
-./vibes --help
+go build -o positive-vibes ./cmd/positive-vibes
+./positive-vibes --help
 ```
 
 To install to your `$GOPATH/bin`:
@@ -84,10 +84,10 @@ targets:
 
 positive-vibes supports a global + project layered config:
 
-| Level | Location | Purpose |
-|-------|----------|---------|
-| **Global** | `~/.config/positive-vibes/vibes.yml` | User-level defaults (personal registries, shared instructions) |
-| **Project** | `./vibes.yml` | Project-specific skills and targets |
+| Level       | Location                             | Purpose                                                        |
+| ----------- | ------------------------------------ | -------------------------------------------------------------- |
+| **Global**  | `~/.config/positive-vibes/vibes.yml` | User-level defaults (personal registries, shared instructions) |
+| **Project** | `./vibes.yml`                        | Project-specific skills and targets                            |
 
 ### Merge behavior
 
@@ -102,15 +102,15 @@ The global config path respects `$XDG_CONFIG_HOME` if set.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `vibes init` | Scan project and create `vibes.yml` |
-| `vibes install <skill>` | Add a skill to your manifest |
-| `vibes apply` | Sync skills to all target tool directories |
-| `vibes apply --force` | Overwrite existing skills |
-| `vibes apply --link` | Use symlinks instead of copies |
+| Command                 | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `vibes init`            | Scan project and create `vibes.yml`             |
+| `vibes install <skill>` | Add a skill to your manifest                    |
+| `vibes apply`           | Sync skills to all target tool directories      |
+| `vibes apply --force`   | Overwrite existing skills                       |
+| `vibes apply --link`    | Use symlinks instead of copies                  |
 | `vibes apply --refresh` | Pull latest from git registries before applying |
-| `vibes generate <desc>` | Generate a custom skill from a description |
+| `vibes generate <desc>` | Generate a custom skill from a description      |
 
 ## How Skills Work
 
@@ -133,11 +133,11 @@ Always use conventional commit format...
 
 When you run `vibes apply`, each skill gets installed to the right place for each tool:
 
-| Target | Location |
-|--------|----------|
-| VS Code Copilot | `.github/skills/<name>/SKILL.md` |
-| OpenCode | `.opencode/skills/<name>/SKILL.md` |
-| Cursor | `.cursor/skills/<name>/SKILL.md` |
+| Target          | Location                           |
+| --------------- | ---------------------------------- |
+| VS Code Copilot | `.github/skills/<name>/SKILL.md`   |
+| OpenCode        | `.opencode/skills/<name>/SKILL.md` |
+| Cursor          | `.cursor/skills/<name>/SKILL.md`   |
 
 ## Bundled Skills
 

@@ -64,7 +64,7 @@ func completionPath(shell string, hintDir string) string {
 
 func zshCompletionPath(hintDir string) string {
 	if hintDir != "" {
-		return filepath.Join(hintDir, "_vibes")
+		return filepath.Join(hintDir, "_positive-vibes")
 	}
 	// macOS with Homebrew
 	if runtime.GOOS == "darwin" {
@@ -72,18 +72,18 @@ func zshCompletionPath(hintDir string) string {
 		for _, prefix := range []string{"/opt/homebrew", "/usr/local"} {
 			dir := filepath.Join(prefix, "share", "zsh", "site-functions")
 			if info, err := os.Stat(dir); err == nil && info.IsDir() {
-				return filepath.Join(dir, "_vibes")
+				return filepath.Join(dir, "_positive-vibes")
 			}
 		}
 	}
 	// Fallback: ~/.local/share/zsh/site-functions (works with oh-my-zsh & standard zsh)
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "share", "zsh", "site-functions", "_vibes")
+	return filepath.Join(home, ".local", "share", "zsh", "site-functions", "_positive-vibes")
 }
 
 func bashCompletionPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "share", "bash-completion", "completions", "vibes")
+	return filepath.Join(home, ".local", "share", "bash-completion", "completions", "positive-vibes")
 }
 
 func fishCompletionPath() string {
@@ -92,13 +92,13 @@ func fishCompletionPath() string {
 		home, _ := os.UserHomeDir()
 		configDir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(configDir, "fish", "completions", "vibes.fish")
+	return filepath.Join(configDir, "fish", "completions", "positive-vibes.fish")
 }
 
 func powershellCompletionPath() string {
 	home, _ := os.UserHomeDir()
 	// Standard cross-platform location for PowerShell modules
-	return filepath.Join(home, ".config", "powershell", "vibes.ps1")
+	return filepath.Join(home, ".config", "powershell", "positive-vibes.ps1")
 }
 
 // installCompletionFile writes data to destPath, creating parent directories

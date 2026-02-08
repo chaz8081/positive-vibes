@@ -10,6 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// --- Root command name test (completion depends on this) ---
+
+func TestRootCmd_UseMatchesBinaryName(t *testing.T) {
+	// rootCmd.Use must match the binary name so that shell completions
+	// register for the correct command.
+	assert.Equal(t, "positive-vibes", rootCmd.Use)
+}
+
 // --- Shell detection tests ---
 
 func TestDetectShell_FromEnvVar(t *testing.T) {
@@ -67,21 +75,21 @@ func TestCompletionPath_Zsh_Linux(t *testing.T) {
 	// Provide a writable fpath dir to avoid needing real system paths
 	dir := t.TempDir()
 	path := completionPath("zsh", dir)
-	assert.Equal(t, filepath.Join(dir, "_vibes"), path)
+	assert.Equal(t, filepath.Join(dir, "_positive-vibes"), path)
 }
 
 func TestCompletionPath_Bash(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	path := completionPath("bash", "")
-	assert.Equal(t, filepath.Join(home, ".local", "share", "bash-completion", "completions", "vibes"), path)
+	assert.Equal(t, filepath.Join(home, ".local", "share", "bash-completion", "completions", "positive-vibes"), path)
 }
 
 func TestCompletionPath_Fish(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	path := completionPath("fish", "")
-	assert.Equal(t, filepath.Join(configDir, "fish", "completions", "vibes.fish"), path)
+	assert.Equal(t, filepath.Join(configDir, "fish", "completions", "positive-vibes.fish"), path)
 }
 
 func TestCompletionPath_Fish_DefaultConfig(t *testing.T) {
@@ -89,7 +97,7 @@ func TestCompletionPath_Fish_DefaultConfig(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	path := completionPath("fish", "")
-	assert.Equal(t, filepath.Join(home, ".config", "fish", "completions", "vibes.fish"), path)
+	assert.Equal(t, filepath.Join(home, ".config", "fish", "completions", "positive-vibes.fish"), path)
 }
 
 func TestCompletionPath_Powershell(t *testing.T) {
@@ -97,7 +105,7 @@ func TestCompletionPath_Powershell(t *testing.T) {
 	t.Setenv("HOME", home)
 	path := completionPath("powershell", "")
 	// Should be under home somewhere
-	assert.Contains(t, path, "vibes.ps1")
+	assert.Contains(t, path, "positive-vibes.ps1")
 }
 
 func TestCompletionPath_UnknownShell(t *testing.T) {
@@ -145,8 +153,23 @@ func TestUninstallCompletion_RemovesFile(t *testing.T) {
 
 func TestUninstallCompletion_NoFileIsNotError(t *testing.T) {
 	dir := t.TempDir()
-	destPath := filepath.Join(dir, "_vibes")
+	destPath := filepath.Join(dir, "_positive-vibes")
 
 	err := uninstallCompletionFile(destPath)
 	require.NoError(t, err)
+}
+
+// --- Generated completion script content tests ---
+
+func TestGenerateCompletionScript_ContainsBinaryName(t *testing.T) {
+	// The generated completion script must reference "positive-vibes" so that
+	// the shell registers completions for the correct binary name.
+	for _, shell := range []string{"zsh", "bash", "fish"} {
+		t.Run(shell, func(t *testing.T) {
+			script, err := generateCompletionScript(rootCmd, shell)
+			require.NoError(t, err)
+			assert.Contains(t, string(script), "positive-vibes",
+				"generated %s completion must reference the binary name", shell)
+		})
+	}
 }
