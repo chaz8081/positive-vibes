@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/chaz8081/positive-vibes/internal/engine"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
@@ -11,43 +12,67 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// bootstrapHeader is the comment block written at the top of a new vibes.yml.
-const bootstrapHeader = `# vibes.yml - positive-vibes project configuration
-#
-# This file defines your AI tooling setup. Run 'vibes apply' to sync
-# skills and instructions to all configured targets.
-#
-# registries:
-#   Remote git repositories containing skill collections.
-#   Each registry has a name, URL, and optional paths map.
-#   Example:
-#     - name: awesome-copilot
-#       url: https://github.com/github/awesome-copilot
-#       paths:
-#         skills: skills/    # subdirectory within the repo
-#
-# skills:
-#   Skills to install. Reference by name (from a registry) or by local path.
-#   Example:
-#     - name: conventional-commits          # from registry
-#     - name: my-custom-skill
-#       path: ./local-skills/my-custom-skill # local directory
-#
-# instructions:
-#   Free-form instructions appended to each target's configuration.
-#   Example:
-#     - "Always use TypeScript for frontend code"
-#
-# targets:
-#   AI tools to sync skills into. Valid values:
-#     vscode-copilot, opencode, cursor
-#
-# Global config: ~/.config/positive-vibes/vibes.yml (merged with this file)
-#   Global registries, skills, and instructions are combined with project config.
-#   Project targets override global targets.
-#
+// renderBootstrapManifest builds the vibes.yml content with inline comments
+// per section, proper 2-space indent, and blank lines between sections.
+func renderBootstrapManifest(m *manifest.Manifest) string {
+	var b strings.Builder
 
-`
+	b.WriteString("# vibes.yml - positive-vibes project configuration\n")
+	b.WriteString("# Run 'vibes apply' to sync skills and instructions to all targets.\n")
+	b.WriteString("# Global config (~/.config/positive-vibes/vibes.yml) is merged with this file.\n")
+	b.WriteString("\n")
+
+	// Registries
+	b.WriteString("# Remote skill registries (git repos). Project entries override global by name.\n")
+	b.WriteString("registries:\n")
+	for _, r := range m.Registries {
+		b.WriteString(fmt.Sprintf("  - name: %s\n", r.Name))
+		b.WriteString(fmt.Sprintf("    url: %s\n", r.URL))
+		if len(r.Paths) > 0 {
+			b.WriteString("    paths:\n")
+			for k, v := range r.Paths {
+				b.WriteString(fmt.Sprintf("      %s: %s\n", k, v))
+			}
+		}
+	}
+	b.WriteString("\n")
+
+	// Skills
+	b.WriteString("# Skills to install. Use name (from registry) or path (local directory).\n")
+	b.WriteString("skills:\n")
+	for _, s := range m.Skills {
+		if s.Path != "" {
+			b.WriteString(fmt.Sprintf("  - name: %s\n", s.Name))
+			b.WriteString(fmt.Sprintf("    path: %s\n", s.Path))
+		} else {
+			b.WriteString(fmt.Sprintf("  - name: %s\n", s.Name))
+		}
+	}
+	b.WriteString("\n")
+
+	// Instructions (commented-out example since init doesn't generate any)
+	if len(m.Instructions) > 0 {
+		b.WriteString("# Free-form instructions appended to each target.\n")
+		b.WriteString("instructions:\n")
+		for _, inst := range m.Instructions {
+			b.WriteString(fmt.Sprintf("  - %q\n", inst))
+		}
+	} else {
+		b.WriteString("# Free-form instructions appended to each target.\n")
+		b.WriteString("# instructions:\n")
+		b.WriteString("#   - \"Always use TypeScript for frontend code\"\n")
+	}
+	b.WriteString("\n")
+
+	// Targets
+	b.WriteString("# AI tools to sync into. Valid: vscode-copilot, opencode, cursor\n")
+	b.WriteString("targets:\n")
+	for _, t := range m.Targets {
+		b.WriteString(fmt.Sprintf("  - %s\n", t))
+	}
+
+	return b.String()
+}
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -86,7 +111,8 @@ var initCmd = &cobra.Command{
 		}}
 
 		manifestPath := filepath.Join(project, "vibes.yml")
-		if err := manifest.SaveManifestWithComments(m, manifestPath, bootstrapHeader); err != nil {
+		content := renderBootstrapManifest(m)
+		if err := os.WriteFile(manifestPath, []byte(content), 0o644); err != nil {
 			fmt.Printf("error writing vibes.yml: %v\n", err)
 			return
 		}
