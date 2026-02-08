@@ -189,8 +189,16 @@ func (r *GitRegistry) List() ([]string, error) {
 
 // Refresh pulls the latest changes from the remote into the cached worktree.
 // If the cache does not exist yet, it clones instead.
+// For pinned refs (anything other than "latest" or empty), refresh is a no-op
+// since the cached checkout already has the correct content.
 func (r *GitRegistry) Refresh() error {
-	// If no cache yet, just clone.
+	// Pinned refs don't need refreshing -- the cached checkout is correct.
+	// If the cache is missing, ensureCache will re-clone at the pinned ref.
+	if r.isPinned() {
+		return r.ensureCache()
+	}
+
+	// "latest" (or empty): pull to update.
 	if _, err := os.Stat(filepath.Join(r.CachePath, ".git")); err != nil {
 		return r.ensureCache()
 	}

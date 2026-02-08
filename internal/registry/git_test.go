@@ -425,3 +425,85 @@ func TestGitRegistry_Fetch_LatestRef(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "skill-a", sk.Name)
 }
+
+func TestGitRegistry_Refresh_PinnedRef_NoOp(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"pinned-skill": "---\nname: pinned-skill\n---\n# Pinned\n",
+	})
+
+	run := makeGitRunner(t, repoDir)
+	run("tag", "v1.0.0")
+
+	// Add a new skill after the tag
+	newDir := filepath.Join(repoDir, "new-skill")
+	require.NoError(t, os.MkdirAll(newDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newDir, "SKILL.md"),
+		[]byte("---\nname: new-skill\n---\n# New\n"), 0o644))
+	run("add", ".")
+	run("commit", "-m", "add new-skill")
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "pinned-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "pinned-reg"),
+		SkillsPath:   ".",
+		Ref:          "v1.0.0",
+	}
+
+	// Initial fetch (clones at tag)
+	_, _, err := reg.Fetch("pinned-skill")
+	require.NoError(t, err)
+
+	// Refresh should be a no-op for pinned ref
+	require.NoError(t, reg.Refresh())
+
+	// Should still NOT see the new skill (pinned to tag)
+	_, _, err = reg.Fetch("new-skill")
+	require.Error(t, err)
+
+	// Original skill still available
+	sk, _, err := reg.Fetch("pinned-skill")
+	require.NoError(t, err)
+	assert.Equal(t, "pinned-skill", sk.Name)
+}
+
+func TestGitRegistry_Refresh_LatestRef_PullsUpdates(t *testing.T) {
+	repoDir := setupTestGitRepo(t, ".", map[string]string{
+		"original-skill": "---\nname: original-skill\n---\n# Original\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "latest-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "latest-reg"),
+		SkillsPath:   ".",
+		Ref:          "latest",
+	}
+
+	// Initial fetch
+	_, _, err := reg.Fetch("original-skill")
+	require.NoError(t, err)
+
+	// Add new skill to remote
+	run := makeGitRunner(t, repoDir)
+	newDir := filepath.Join(repoDir, "added-skill")
+	require.NoError(t, os.MkdirAll(newDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newDir, "SKILL.md"),
+		[]byte("---\nname: added-skill\n---\n# Added\n"), 0o644))
+	run("add", ".")
+	run("commit", "-m", "add skill")
+
+	// Before refresh: not available
+	_, _, err = reg.Fetch("added-skill")
+	require.Error(t, err)
+
+	// Refresh (should pull)
+	require.NoError(t, reg.Refresh())
+
+	// After refresh: available
+	sk, _, err := reg.Fetch("added-skill")
+	require.NoError(t, err)
+	assert.Equal(t, "added-skill", sk.Name)
+}
