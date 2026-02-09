@@ -17,20 +17,23 @@ var installCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
 		project := ProjectDir()
+		globalPath := defaultGlobalManifestPath()
 
-		// Find existing manifest (vibes.yml preferred, vibes.yaml fallback)
+		// Find existing manifest (vibes.yaml preferred, vibes.yml supported)
 		_, manifestPath, findErr := manifest.LoadManifestFromProject(project)
 		if findErr != nil {
-			// No manifest yet — default to vibes.yml
-			manifestPath = filepath.Join(project, "vibes.yml")
+			// No manifest yet — default to vibes.yaml (canonical name)
+			manifestPath = filepath.Join(project, "vibes.yaml")
 		}
 
 		fmt.Printf("Looking for '%s'...\n", name)
 
-		// prepare registries: embedded + ones from manifest (if loadable)
+		// Prepare registries: embedded + merged (global + local) registries.
+		// This ensures skills from global registries (e.g. awesome-copilot)
+		// are discoverable even without a local config.
 		regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
-		if m, err := manifest.LoadManifest(manifestPath); err == nil {
-			regs = append(regs, gitRegistriesFromManifest(m)...)
+		if merged, err := manifest.LoadMergedManifest(project, globalPath); err == nil {
+			regs = append(regs, gitRegistriesFromManifest(merged)...)
 		}
 
 		inst := engine.NewInstaller(regs)
@@ -46,7 +49,7 @@ var installCmd = &cobra.Command{
 				if s.Name == name && s.Path != "" {
 					fmt.Printf("Found local skill at %s\n", s.Path)
 					fmt.Println("Added to manifest with local path")
-					fmt.Println("Run 'vibes apply' to install it everywhere!")
+					fmt.Println("Run 'positive-vibes apply' to install it everywhere!")
 					return
 				}
 			}
@@ -54,7 +57,7 @@ var installCmd = &cobra.Command{
 
 		fmt.Println("Found it! Adding to your manifest...")
 		fmt.Printf("Updated %s\n", filepath.Base(manifestPath))
-		fmt.Println("Run 'vibes apply' to install it everywhere!")
+		fmt.Println("Run 'positive-vibes apply' to install it everywhere!")
 	},
 }
 

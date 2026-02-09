@@ -168,6 +168,59 @@ skills: []
 	t.Fatalf("skill 'code-review' not found in manifest")
 }
 
+func TestInstaller_NoManifest_CreatesNew(t *testing.T) {
+	// When no manifest file exists, Install should create one with the skill added.
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	// mfile does NOT exist on disk
+
+	inst := NewInstaller([]registry.SkillSource{registry.NewEmbeddedRegistry()})
+	if err := inst.Install("code-review", mfile); err != nil {
+		t.Fatalf("install into missing manifest should succeed, got: %v", err)
+	}
+
+	// Verify manifest was created with the skill
+	m, err := manifest.LoadManifest(mfile)
+	if err != nil {
+		t.Fatalf("should be able to load created manifest: %v", err)
+	}
+	found := false
+	for _, s := range m.Skills {
+		if s.Name == "code-review" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'code-review' in created manifest skills")
+	}
+}
+
+func TestInstaller_NoManifest_SupportsYml(t *testing.T) {
+	// When the caller passes a .yml path and it doesn't exist, Install should
+	// still create it (both extensions supported).
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yml")
+
+	inst := NewInstaller([]registry.SkillSource{registry.NewEmbeddedRegistry()})
+	if err := inst.Install("code-review", mfile); err != nil {
+		t.Fatalf("install into missing .yml manifest should succeed, got: %v", err)
+	}
+
+	m, err := manifest.LoadManifest(mfile)
+	if err != nil {
+		t.Fatalf("should be able to load created manifest: %v", err)
+	}
+	found := false
+	for _, s := range m.Skills {
+		if s.Name == "code-review" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'code-review' in created manifest skills")
+	}
+}
+
 func TestInstaller_InvalidLocalSkill(t *testing.T) {
 	// A local skill dir exists but SKILL.md is missing -> should fall through to registry
 	tmp := t.TempDir()
@@ -193,5 +246,96 @@ skills: []
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected 'not found' error, got: %v", err)
+	}
+}
+
+// --- Remove tests ---
+
+func TestRemove_RemovesExistingSkill(t *testing.T) {
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: code-review
+- name: conventional-commits
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	inst := NewInstaller(nil)
+	if err := inst.Remove("code-review", mfile); err != nil {
+		t.Fatalf("remove error: %v", err)
+	}
+
+	// Verify manifest updated
+	m, err := manifest.LoadManifest(mfile)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Skills) != 1 {
+		t.Fatalf("expected 1 skill remaining, got %d", len(m.Skills))
+	}
+	if m.Skills[0].Name != "conventional-commits" {
+		t.Fatalf("expected remaining skill to be 'conventional-commits', got %q", m.Skills[0].Name)
+	}
+}
+
+func TestRemove_SkillNotInManifest(t *testing.T) {
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: code-review
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	inst := NewInstaller(nil)
+	err := inst.Remove("nonexistent-skill", mfile)
+	if err == nil {
+		t.Fatalf("expected error removing nonexistent skill")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestRemove_NoManifest(t *testing.T) {
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	// File does NOT exist
+
+	inst := NewInstaller(nil)
+	err := inst.Remove("code-review", mfile)
+	if err == nil {
+		t.Fatalf("expected error when manifest doesn't exist")
+	}
+}
+
+func TestRemove_LastSkill(t *testing.T) {
+	// Removing the last skill should work (manifest may become invalid, but that's user's choice)
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: code-review
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	inst := NewInstaller(nil)
+	if err := inst.Remove("code-review", mfile); err != nil {
+		t.Fatalf("remove error: %v", err)
+	}
+
+	m, err := manifest.LoadManifest(mfile)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Skills) != 0 {
+		t.Fatalf("expected 0 skills remaining, got %d", len(m.Skills))
 	}
 }
