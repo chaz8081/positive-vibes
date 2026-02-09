@@ -13,14 +13,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// renderBootstrapManifest builds the vibes.yml content with inline comments
+// renderBootstrapManifest builds the vibes.yaml content with inline comments
 // per section, proper 2-space indent, and blank lines between sections.
 func renderBootstrapManifest(m *manifest.Manifest) string {
 	var b strings.Builder
 
-	b.WriteString("# vibes.yml - positive-vibes project configuration\n")
+	b.WriteString("# vibes.yaml - positive-vibes configuration\n")
 	b.WriteString("# Run 'vibes apply' to sync skills and instructions to all targets.\n")
-	b.WriteString("# Global config (~/.config/positive-vibes/vibes.yml) is merged with this file.\n")
+	b.WriteString("# Global (~/.config/positive-vibes/vibes.yaml) and project configs are merged automatically; project values take priority.\n")
 	b.WriteString("\n")
 
 	// Registries
@@ -41,20 +41,27 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 
 	// Skills
 	b.WriteString("# Skills to install. Use name (from registry) or path (local directory).\n")
-	b.WriteString("skills:\n")
-	for _, s := range m.Skills {
-		if s.Path != "" {
-			b.WriteString(fmt.Sprintf("  - name: %s\n", s.Name))
-			b.WriteString(fmt.Sprintf("    path: %s\n", s.Path))
-		} else {
-			b.WriteString(fmt.Sprintf("  - name: %s\n", s.Name))
+	if len(m.Skills) > 0 {
+		b.WriteString("skills:\n")
+		for _, s := range m.Skills {
+			if s.Path != "" {
+				b.WriteString(fmt.Sprintf("  - name: %s\n", s.Name))
+				b.WriteString(fmt.Sprintf("    path: %s\n", s.Path))
+			} else {
+				b.WriteString(fmt.Sprintf("  - name: %s\n", s.Name))
+			}
 		}
+	} else {
+		b.WriteString("# skills:\n")
+		b.WriteString("#   - name: conventional-commits\n")
+		b.WriteString("#   - name: my-custom-skill\n")
+		b.WriteString("#     path: ./local-skills/my-custom-skill\n")
 	}
 	b.WriteString("\n")
 
-	// Instructions (commented-out example since init doesn't generate any)
+	// Instructions
+	b.WriteString("# Instructions appended to each target. Use name + content (inline) or path (file).\n")
 	if len(m.Instructions) > 0 {
-		b.WriteString("# Instructions appended to each target. Use name + content (inline) or path (file).\n")
 		b.WriteString("instructions:\n")
 		for _, inst := range m.Instructions {
 			b.WriteString(fmt.Sprintf("  - name: %s\n", inst.Name))
@@ -68,18 +75,18 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 			}
 		}
 	} else {
-		b.WriteString("# Instructions appended to each target. Use name + content (inline) or path (file).\n")
 		b.WriteString("# instructions:\n")
 		b.WriteString("#   - name: coding-style\n")
 		b.WriteString("#     content: \"Always use TypeScript for frontend code\"\n")
 		b.WriteString("#   - name: project-guide\n")
 		b.WriteString("#     path: ./instructions/guide.md\n")
+		b.WriteString("#     apply_to: opencode\n")
 	}
 	b.WriteString("\n")
 
-	// Agents (commented-out example since init doesn't generate any)
+	// Agents
+	b.WriteString("# Agents to install. Use path (local file) or registry (remote).\n")
 	if len(m.Agents) > 0 {
-		b.WriteString("# Agents to install. Use path (local file) or registry (remote).\n")
 		b.WriteString("agents:\n")
 		for _, a := range m.Agents {
 			b.WriteString(fmt.Sprintf("  - name: %s\n", a.Name))
@@ -90,18 +97,26 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 			}
 		}
 	} else {
-		b.WriteString("# Agents to install. Use path (local file) or registry (remote).\n")
 		b.WriteString("# agents:\n")
 		b.WriteString("#   - name: code-reviewer\n")
 		b.WriteString("#     path: ./agents/reviewer.md\n")
+		b.WriteString("#   - name: registry-agent\n")
+		b.WriteString("#     registry: awesome-copilot/my-skill:agents/reviewer.md\n")
 	}
 	b.WriteString("\n")
 
 	// Targets
 	b.WriteString("# AI tools to sync into. Valid: vscode-copilot, opencode, cursor\n")
-	b.WriteString("targets:\n")
-	for _, t := range m.Targets {
-		b.WriteString(fmt.Sprintf("  - %s\n", t))
+	if len(m.Targets) > 0 {
+		b.WriteString("targets:\n")
+		for _, t := range m.Targets {
+			b.WriteString(fmt.Sprintf("  - %s\n", t))
+		}
+	} else {
+		b.WriteString("# targets:\n")
+		b.WriteString("#   - vscode-copilot\n")
+		b.WriteString("#   - opencode\n")
+		b.WriteString("#   - cursor\n")
 	}
 
 	return b.String()
@@ -111,8 +126,8 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 type initTarget int
 
 const (
-	initTargetLocal  initTarget = iota + 1 // project-level vibes.yml only
-	initTargetGlobal                       // global (~/.config/positive-vibes/vibes.yml) only
+	initTargetLocal  initTarget = iota + 1 // project-level vibes.yaml only
+	initTargetGlobal                       // global (~/.config/positive-vibes/vibes.yaml) only
 	initTargetBoth                         // both local and global
 )
 
@@ -131,8 +146,9 @@ func resolveInitAction(globalExists, localExists bool, prompt func() (initTarget
 	}
 }
 
-// writeInitManifest writes a bootstrap vibes.yml to path.
+// writeInitManifest writes a bootstrap vibes.yaml to path.
 // It creates parent directories as needed and refuses to overwrite an existing file.
+// Uses buildGlobalDefaults to include sensible defaults (e.g. awesome-copilot registry).
 func writeInitManifest(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("%s already exists", path)
@@ -140,16 +156,16 @@ func writeInitManifest(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
 	}
-	content := renderBootstrapManifest(&manifest.Manifest{})
+	content := renderBootstrapManifest(buildGlobalDefaults())
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // promptInitTarget reads an interactive choice from stdin: (L)ocal, (G)lobal, or (B)oth.
 func promptInitTarget() (initTarget, error) {
-	fmt.Println("No vibes.yml found (local or global).")
+	fmt.Println("No vibes.yaml found (local or global).")
 	fmt.Println("Where would you like to create one?")
-	fmt.Println("  [L] Local  (project-level vibes.yml)")
-	fmt.Println("  [G] Global (~/.config/positive-vibes/vibes.yml)")
+	fmt.Println("  [L] Local  (project-level vibes.yaml)")
+	fmt.Println("  [G] Global (~/.config/positive-vibes/vibes.yaml)")
 	fmt.Println("  [B] Both")
 	fmt.Print("Choice [L]: ")
 
@@ -171,7 +187,7 @@ func promptInitTarget() (initTarget, error) {
 	}
 }
 
-// localManifestExists checks whether a project-level vibes.yml or vibes.yaml exists.
+// localManifestExists checks whether a project-level vibes.yaml or vibes.yml exists.
 func localManifestExists(projectDir string) bool {
 	for _, name := range manifest.ManifestFilenames {
 		if _, err := os.Stat(filepath.Join(projectDir, name)); err == nil {
@@ -183,7 +199,7 @@ func localManifestExists(projectDir string) bool {
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Create a starter vibes.yml",
+	Short: "Create a starter vibes.yaml",
 	Run: func(cmd *cobra.Command, args []string) {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
@@ -205,7 +221,7 @@ var initCmd = &cobra.Command{
 		// Write the requested manifest(s).
 		switch action {
 		case initTargetLocal, initTargetBoth:
-			localPath := filepath.Join(project, "vibes.yml")
+			localPath := filepath.Join(project, "vibes.yaml")
 
 			// Scan project for smart defaults (skills, targets).
 			fmt.Println("Scanning your project...")
@@ -260,6 +276,19 @@ func buildManifestFromScan(res *engine.ScanResult) *manifest.Manifest {
 		Paths: map[string]string{"skills": "skills/"},
 	}}
 	return m
+}
+
+// buildGlobalDefaults creates a Manifest with sensible defaults for the global config.
+// Includes the awesome-copilot registry but no skills or targets (those are project-specific).
+func buildGlobalDefaults() *manifest.Manifest {
+	return &manifest.Manifest{
+		Registries: []manifest.RegistryRef{{
+			Name:  "awesome-copilot",
+			URL:   "https://github.com/github/awesome-copilot",
+			Ref:   "latest",
+			Paths: map[string]string{"skills": "skills/"},
+		}},
+	}
 }
 
 // writeInitManifestContent writes pre-rendered content to path, creating

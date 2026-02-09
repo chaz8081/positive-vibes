@@ -9,8 +9,8 @@ import (
 )
 
 // ManifestFilenames lists the manifest filenames in priority order.
-// vibes.yml is preferred; vibes.yaml is the legacy fallback.
-var ManifestFilenames = []string{"vibes.yml", "vibes.yaml"}
+// vibes.yaml is preferred; vibes.yml is the legacy fallback.
+var ManifestFilenames = []string{"vibes.yaml", "vibes.yml"}
 
 // ValidTargets are the supported target tool identifiers.
 var ValidTargets = []string{"vscode-copilot", "opencode", "cursor"}
@@ -146,8 +146,8 @@ func isValidTarget(t string) bool {
 	return false
 }
 
-// LoadManifestFromProject searches a project directory for vibes.yml (preferred)
-// or vibes.yaml (fallback). Returns the parsed manifest and the path that was loaded.
+// LoadManifestFromProject searches a project directory for vibes.yaml (preferred)
+// or vibes.yml (legacy fallback). Returns the parsed manifest and the path that was loaded.
 func LoadManifestFromProject(projectDir string) (*Manifest, string, error) {
 	for _, name := range ManifestFilenames {
 		p := filepath.Join(projectDir, name)

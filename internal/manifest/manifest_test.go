@@ -204,30 +204,37 @@ func TestSaveManifest(t *testing.T) {
 
 // --- LoadManifestFromProject tests ---
 
-func TestLoadManifestFromProject_PrefersVibesYml(t *testing.T) {
+func TestManifestFilenames_YamlIsPreferred(t *testing.T) {
+	// vibes.yaml should be the first (preferred) filename; vibes.yml is legacy
+	require.Len(t, ManifestFilenames, 2)
+	assert.Equal(t, "vibes.yaml", ManifestFilenames[0], "vibes.yaml should be preferred")
+	assert.Equal(t, "vibes.yml", ManifestFilenames[1], "vibes.yml should be legacy fallback")
+}
+
+func TestLoadManifestFromProject_PrefersVibesYaml(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create both vibes.yml and vibes.yaml with different content
-	ymlContent := `skills:
-  - name: from-yml
-targets:
-  - opencode
-`
+	// Create both vibes.yaml and vibes.yml with different content
 	yamlContent := `skills:
   - name: from-yaml
 targets:
   - cursor
 `
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "vibes.yml"), []byte(ymlContent), 0o644))
+	ymlContent := `skills:
+  - name: from-yml
+targets:
+  - opencode
+`
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "vibes.yaml"), []byte(yamlContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "vibes.yml"), []byte(ymlContent), 0o644))
 
 	m, path, err := LoadManifestFromProject(dir)
 	require.NoError(t, err)
 	require.NotNil(t, m)
 
-	// Should prefer vibes.yml
-	assert.Equal(t, "from-yml", m.Skills[0].Name)
-	assert.Equal(t, filepath.Join(dir, "vibes.yml"), path)
+	// Should prefer vibes.yaml (canonical); vibes.yml is legacy fallback
+	assert.Equal(t, "from-yaml", m.Skills[0].Name)
+	assert.Equal(t, filepath.Join(dir, "vibes.yaml"), path)
 }
 
 func TestLoadManifestFromProject_FallsBackToVibesYaml(t *testing.T) {
