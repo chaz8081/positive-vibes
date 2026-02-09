@@ -16,10 +16,10 @@ var (
 		Short: "positive-vibes - harmonize your AI tooling",
 		Long: `positive-vibes helps align your AI tooling across platforms.
 Manage Agent Skills and Instructions from a single source of truth
-(vibes.yml) and keep your dev setup in sync.
+(vibes.yaml) and keep your dev setup in sync.
 
   Examples:
-  positive-vibes init    # create a vibes.yml
+  positive-vibes init    # create a vibes.yaml
   positive-vibes apply   # push local vibes to supported platforms
 `,
 		// Default action shows help
@@ -66,8 +66,8 @@ func defaultCachePath(name string) string {
 }
 
 // defaultGlobalManifestPath returns the path to the user-level global config.
-// Uses $XDG_CONFIG_HOME/positive-vibes/vibes.yml, falling back to
-// ~/.config/positive-vibes/vibes.yml.
+// Uses $XDG_CONFIG_HOME/positive-vibes/vibes.yaml, falling back to
+// ~/.config/positive-vibes/vibes.yaml.
 func defaultGlobalManifestPath() string {
 	configDir := os.Getenv("XDG_CONFIG_HOME")
 	if configDir == "" {
@@ -77,7 +77,7 @@ func defaultGlobalManifestPath() string {
 		}
 		configDir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(configDir, "positive-vibes", "vibes.yml")
+	return filepath.Join(configDir, "positive-vibes", "vibes.yaml")
 }
 
 // gitRegistriesFromManifest builds GitRegistry sources for each registry in the manifest.

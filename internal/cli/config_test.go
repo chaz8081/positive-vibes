@@ -39,15 +39,16 @@ func TestFormatPaths_NeitherExists(t *testing.T) {
 	assert.Contains(t, out, "[not found]")
 }
 
-func TestFormatPaths_LegacyYamlFound(t *testing.T) {
+func TestFormatPaths_LegacyYmlFound(t *testing.T) {
 	dir := t.TempDir()
 	localDir := filepath.Join(dir, "project")
 	require.NoError(t, os.MkdirAll(localDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(localDir, "vibes.yaml"), []byte("skills: []"), 0o644))
+	// vibes.yml is now the legacy name
+	require.NoError(t, os.WriteFile(filepath.Join(localDir, "vibes.yml"), []byte("skills: []"), 0o644))
 
-	globalPath := filepath.Join(dir, "nope", "vibes.yml")
+	globalPath := filepath.Join(dir, "nope", "vibes.yaml")
 	out := formatPaths(globalPath, localDir, filepath.Join(dir, "cache"))
-	assert.Contains(t, out, "vibes.yaml")
+	assert.Contains(t, out, "vibes.yml")
 	assert.Contains(t, out, "legacy")
 }
 
@@ -513,4 +514,73 @@ func TestValidateConfig_AgentPathMissing(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "should report missing agent path")
+}
+
+// --- Context-aware validation: global-only should not flag missing skills/targets ---
+
+func TestValidateConfig_GlobalOnly_NoSkillsOrTargets_IsOK(t *testing.T) {
+	// A global-only config with just registries and no skills/targets is valid.
+	m := &manifest.Manifest{
+		Registries: []manifest.RegistryRef{
+			{Name: "awesome-copilot", URL: "https://github.com/github/awesome-copilot"},
+		},
+		Skills:  nil,
+		Targets: nil,
+	}
+
+	result := validateConfig(m, nil, false) // hasLocalConfig=false
+	assert.True(t, result.ok(), "global-only config with no skills/targets should not report problems")
+	assert.Empty(t, result.problems)
+}
+
+func TestValidateConfig_WithLocalConfig_NoSkills_IsError(t *testing.T) {
+	// When local config exists, missing skills IS a problem.
+	m := &manifest.Manifest{
+		Skills:  nil,
+		Targets: []string{"opencode"},
+	}
+
+	result := validateConfig(m, nil, true) // hasLocalConfig=true
+	assert.False(t, result.ok())
+	found := false
+	for _, p := range result.problems {
+		if p.field == "skills" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should report missing skills when local config present")
+}
+
+func TestValidateConfig_WithLocalConfig_NoTargets_IsError(t *testing.T) {
+	// When local config exists, missing targets IS a problem.
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "conventional-commits"}},
+		Targets: nil,
+	}
+
+	result := validateConfig(m, []string{"conventional-commits"}, true) // hasLocalConfig=true
+	assert.False(t, result.ok())
+	found := false
+	for _, p := range result.problems {
+		if p.field == "targets" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should report missing targets when local config present")
+}
+
+func TestValidateConfig_GlobalOnly_StillValidatesOtherChecks(t *testing.T) {
+	// Even in global-only mode, invalid targets and bad paths should still be caught.
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "bad-skill", Path: "/nonexistent/path"}},
+		Targets: []string{"vim-copilot"},
+	}
+
+	result := validateConfig(m, nil, false) // hasLocalConfig=false
+	assert.False(t, result.ok(), "global-only should still catch invalid targets and bad paths")
+	// Should have problems for invalid target and missing path, but NOT for "no skills" or "no targets"
+	for _, p := range result.problems {
+		assert.NotEqual(t, "skills", p.field, "should not flag 'no skills' in global-only")
+		assert.NotEqual(t, "targets", p.field, "should not flag 'no targets' in global-only")
+	}
 }

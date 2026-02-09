@@ -25,14 +25,14 @@ func formatPaths(globalPath, projectDir, cacheDir string) string {
 	}
 	fmt.Fprintf(&b, "Global config:  %s  %s\n", globalPath, globalStatus)
 
-	// Local config status -- check vibes.yml then vibes.yaml
+	// Local config status -- check vibes.yaml then vibes.yml
 	localStatus := "[not found]"
 	localPath := "(none)"
 	for _, name := range manifest.ManifestFilenames {
 		p := filepath.Join(projectDir, name)
 		if _, err := os.Stat(p); err == nil {
 			localPath = p
-			if name == "vibes.yaml" {
+			if name == "vibes.yml" {
 				localStatus = "[found, legacy name]"
 			} else {
 				localStatus = "[found]"
@@ -41,7 +41,7 @@ func formatPaths(globalPath, projectDir, cacheDir string) string {
 		}
 	}
 	if localStatus == "[not found]" {
-		localPath = filepath.Join(projectDir, "vibes.yml")
+		localPath = filepath.Join(projectDir, "vibes.yaml")
 	}
 	fmt.Fprintf(&b, "Local config:   %s  %s\n", localPath, localStatus)
 
@@ -235,16 +235,26 @@ func (r *configValidationResult) add(field, message string) {
 
 // validateConfig runs offline checks on a merged manifest.
 // embeddedSkills is the list of skill names available in the embedded registry.
-func validateConfig(m *manifest.Manifest, embeddedSkills []string) *configValidationResult {
+// hasLocalConfig indicates whether a local project config was found; when false
+// (global-only), empty skills/targets are not flagged as problems since a global
+// config is just a base layer.
+func validateConfig(m *manifest.Manifest, embeddedSkills []string, hasLocalConfig ...bool) *configValidationResult {
 	result := &configValidationResult{}
 
-	// Check skills defined
-	if len(m.Skills) == 0 {
+	// Determine if we should require skills/targets.
+	// Default to true (backwards-compatible with existing callers).
+	requireSkillsAndTargets := true
+	if len(hasLocalConfig) > 0 {
+		requireSkillsAndTargets = hasLocalConfig[0]
+	}
+
+	// Check skills defined (only when local config is present)
+	if requireSkillsAndTargets && len(m.Skills) == 0 {
 		result.add("skills", "no skills defined")
 	}
 
-	// Check targets defined
-	if len(m.Targets) == 0 {
+	// Check targets defined (only when local config is present)
+	if requireSkillsAndTargets && len(m.Targets) == 0 {
 		result.add("targets", "no targets defined")
 	}
 
@@ -403,7 +413,7 @@ Exits with code 1 if any problems are found.`,
 		}
 		if localPath == "" {
 			localStatus = "not found"
-			localPath = filepath.Join(project, "vibes.yml")
+			localPath = filepath.Join(project, "vibes.yaml")
 		}
 		fmt.Fprintf(os.Stdout, "Loading local config:   %s  %s\n\n", localPath, localStatus)
 
@@ -418,8 +428,9 @@ Exits with code 1 if any problems are found.`,
 		embedded := registry.NewEmbeddedRegistry()
 		embeddedSkills, _ := embedded.List()
 
-		// Run validation
-		result := validateConfig(merged, embeddedSkills)
+		// Run validation -- pass whether local config was found
+		hasLocal := localStatus == "ok"
+		result := validateConfig(merged, embeddedSkills, hasLocal)
 
 		// Print registries
 		fmt.Fprintf(os.Stdout, "Registries (%d):\n", len(merged.Registries))
@@ -459,7 +470,11 @@ Exits with code 1 if any problems are found.`,
 		fmt.Println()
 
 		if result.ok() {
-			fmt.Println("All checks passed.")
+			if !hasLocal {
+				fmt.Println("No local vibes detected. Run 'positive-vibes init' to spread some good vibes here.")
+			} else {
+				fmt.Println("All checks passed.")
+			}
 		} else {
 			fmt.Fprintf(os.Stdout, "%d problem(s) found.\n", len(result.problems))
 			os.Exit(1)
