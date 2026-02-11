@@ -14,6 +14,83 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
+type statusKind int
+
+const (
+	statusOK statusKind = iota
+	statusWarn
+	statusFail
+)
+
+func shouldUseColor(mode string) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	switch strings.ToLower(mode) {
+	case "always":
+		return true
+	case "never":
+		return false
+	default:
+		if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+			return false
+		}
+		fi, err := os.Stdout.Stat()
+		if err != nil {
+			return false
+		}
+		return (fi.Mode() & os.ModeCharDevice) != 0
+	}
+}
+
+func colorizeStatus(label string, kind statusKind, enabled bool) string {
+	if !enabled {
+		return label
+	}
+	code := "32"
+	switch kind {
+	case statusWarn:
+		code = "33"
+	case statusFail:
+		code = "31"
+	}
+	return "\x1b[" + code + "m" + label + "\x1b[0m"
+}
+
+func colorizeSourceAnnotations(s string, enabled bool) string {
+	if !enabled {
+		return s
+	}
+	repl := strings.NewReplacer(
+		"# [global]", "\x1b[34m# [global]\x1b[0m",
+		"# [local]", "\x1b[32m# [local]\x1b[0m",
+		"# [local, overrides global]", "\x1b[33m# [local, overrides global]\x1b[0m",
+	)
+	return repl.Replace(s)
+}
+
+func relativePathsNoEffectNote(m *manifest.Manifest) string {
+	if m == nil {
+		return ""
+	}
+	for _, s := range m.Skills {
+		if s.Path != "" {
+			return ""
+		}
+	}
+	for _, i := range m.Instructions {
+		if i.Path != "" {
+			return ""
+		}
+	}
+	for _, a := range m.Agents {
+		if a.Path != "" {
+			return ""
+		}
+	}
+	return "# note: no path entries are present, so --relative-paths has no visible effect"
+}
+
 // --- Pure helper functions (tested independently) ---
 
 // formatPaths returns a human-readable summary of config file locations and their status.
@@ -297,7 +374,7 @@ func validateConfig(m *manifest.Manifest, embeddedSkills []string, hasLocalConfi
 	return validateConfigWithContext(m, embeddedSkills, hasLocal, nil, nil)
 }
 
-func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, hasLocalConfig bool, global, local *manifest.Manifest) *configValidationResult {
+func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, hasLocalConfig bool, global, local *manifest.Manifest, unresolvedRegistries ...string) *configValidationResult {
 	result := &configValidationResult{}
 
 	// Determine if we should require skills/targets.
@@ -338,7 +415,11 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 				result.add(s.Name, "path not found: "+s.Path)
 			}
 		} else if !embeddedSet[s.Name] {
-			result.add(s.Name, "not found in any registry")
+			if len(unresolvedRegistries) > 0 {
+				result.warn(s.Name, fmt.Sprintf("could not verify skill due to registry lookup failures: %s", strings.Join(unresolvedRegistries, ", ")))
+			} else {
+				result.add(s.Name, "not found in any registry")
+			}
 		}
 	}
 
@@ -374,6 +455,27 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 	}
 
 	return result
+}
+
+func collectAvailableSkillsFromSources(sources []registry.SkillSource) (map[string]bool, []configProblem) {
+	available := make(map[string]bool)
+	var warnings []configProblem
+
+	for _, src := range sources {
+		names, err := src.List()
+		if err != nil {
+			warnings = append(warnings, configProblem{
+				field:   "registry/" + src.Name(),
+				message: "could not list skills: " + err.Error(),
+			})
+			continue
+		}
+		for _, n := range names {
+			available[n] = true
+		}
+	}
+
+	return available, warnings
 }
 
 func namesFromSkills(items []manifest.SkillRef) map[string]bool {
@@ -553,6 +655,7 @@ func buildConfigDiffOutput(project, globalPath string, asJSON bool) (string, err
 var configShowSources bool
 var configShowRelativePaths bool
 var configDiffJSON bool
+var configColor string
 
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -581,6 +684,7 @@ Use --sources to annotate each value with [global], [local], or
 	Run: func(cmd *cobra.Command, args []string) {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
+		colorEnabled := shouldUseColor(configColor)
 
 		if configShowSources {
 			// Load global and local separately for annotation
@@ -603,11 +707,17 @@ Use --sources to annotate each value with [global], [local], or
 				fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Print(annotateManifestWithOptions(global, local, merged, annotateRenderOptions{
+			if configShowRelativePaths {
+				if note := relativePathsNoEffectNote(merged); note != "" {
+					fmt.Println(note)
+				}
+			}
+			out := annotateManifestWithOptions(global, local, merged, annotateRenderOptions{
 				RelativePaths: configShowRelativePaths,
 				ProjectDir:    project,
 				GlobalPath:    globalPath,
-			}))
+			})
+			fmt.Print(colorizeSourceAnnotations(out, colorEnabled))
 		} else {
 			merged, err := manifest.LoadMergedManifest(project, globalPath)
 			if err != nil {
@@ -658,13 +768,18 @@ Exits with code 1 if any problems are found.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
+		colorEnabled := shouldUseColor(configColor)
 
 		// Report config file status
 		globalStatus := "ok"
 		if _, err := os.Stat(globalPath); err != nil {
 			globalStatus = "not found"
 		}
-		fmt.Fprintf(os.Stdout, "Loading global config:  %s  %s\n", globalPath, globalStatus)
+		statusLabel := colorizeStatus(globalStatus, statusOK, colorEnabled)
+		if globalStatus != "ok" {
+			statusLabel = colorizeStatus(globalStatus, statusWarn, colorEnabled)
+		}
+		fmt.Fprintf(os.Stdout, "Loading global config:  %s  %s\n", globalPath, statusLabel)
 
 		localStatus := "ok"
 		localPath := ""
@@ -679,7 +794,11 @@ Exits with code 1 if any problems are found.`,
 			localStatus = "not found"
 			localPath = filepath.Join(project, "vibes.yaml")
 		}
-		fmt.Fprintf(os.Stdout, "Loading local config:   %s  %s\n\n", localPath, localStatus)
+		localStatusLabel := colorizeStatus(localStatus, statusOK, colorEnabled)
+		if localStatus != "ok" {
+			localStatusLabel = colorizeStatus(localStatus, statusWarn, colorEnabled)
+		}
+		fmt.Fprintf(os.Stdout, "Loading local config:   %s  %s\n\n", localPath, localStatusLabel)
 
 		// Load merged manifest
 		merged, err := manifest.LoadMergedManifest(project, globalPath)
@@ -696,18 +815,30 @@ Exits with code 1 if any problems are found.`,
 			localM = m
 		}
 
-		// Get embedded skill names
-		embedded := registry.NewEmbeddedRegistry()
-		embeddedSkills, _ := embedded.List()
+		// Get available skill names from embedded + configured registries
+		sources := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+		sources = append(sources, gitRegistriesFromManifest(merged)...)
+		availableSkills, sourceWarnings := collectAvailableSkillsFromSources(sources)
+		var skillNames []string
+		for name := range availableSkills {
+			skillNames = append(skillNames, name)
+		}
+		sort.Strings(skillNames)
+		var unresolved []string
+		for _, w := range sourceWarnings {
+			resultField := strings.TrimPrefix(w.field, "registry/")
+			unresolved = append(unresolved, resultField)
+		}
 
 		// Run validation -- pass whether local config was found
 		hasLocal := localStatus == "ok"
-		result := validateConfigWithContext(merged, embeddedSkills, hasLocal, globalM, localM)
+		result := validateConfigWithContext(merged, skillNames, hasLocal, globalM, localM, unresolved...)
+		result.warnings = append(sourceWarnings, result.warnings...)
 
 		// Print registries
 		fmt.Fprintf(os.Stdout, "Registries (%d):\n", len(merged.Registries))
 		for _, r := range merged.Registries {
-			fmt.Fprintf(os.Stdout, "  ok  %s  %s\n", r.Name, r.URL)
+			fmt.Fprintf(os.Stdout, "  %s  %s  %s\n", colorizeStatus("ok", statusOK, colorEnabled), r.Name, r.URL)
 		}
 		fmt.Println()
 
@@ -719,13 +850,13 @@ Exits with code 1 if any problems are found.`,
 		}
 		for _, s := range merged.Skills {
 			if msg, bad := problemSkills[s.Name]; bad {
-				fmt.Fprintf(os.Stdout, "  FAIL  %s  %s\n", s.Name, msg)
+				fmt.Fprintf(os.Stdout, "  %s  %s  %s\n", colorizeStatus("FAIL", statusFail, colorEnabled), s.Name, msg)
 			} else {
 				source := "(embedded)"
 				if s.Path != "" {
 					source = "(local: " + s.Path + ")"
 				}
-				fmt.Fprintf(os.Stdout, "  ok  %s  %s\n", s.Name, source)
+				fmt.Fprintf(os.Stdout, "  %s  %s  %s\n", colorizeStatus("ok", statusOK, colorEnabled), s.Name, source)
 			}
 		}
 		fmt.Println()
@@ -734,9 +865,9 @@ Exits with code 1 if any problems are found.`,
 		fmt.Fprintf(os.Stdout, "Targets (%d):\n", len(merged.Targets))
 		for _, t := range merged.Targets {
 			if msg, bad := problemSkills[t]; bad {
-				fmt.Fprintf(os.Stdout, "  FAIL  %s  %s\n", t, msg)
+				fmt.Fprintf(os.Stdout, "  %s  %s  %s\n", colorizeStatus("FAIL", statusFail, colorEnabled), t, msg)
 			} else {
-				fmt.Fprintf(os.Stdout, "  ok  %s\n", t)
+				fmt.Fprintf(os.Stdout, "  %s  %s\n", colorizeStatus("ok", statusOK, colorEnabled), t)
 			}
 		}
 		fmt.Println()
@@ -744,7 +875,7 @@ Exits with code 1 if any problems are found.`,
 		if len(result.warnings) > 0 {
 			fmt.Println("Warnings:")
 			for _, w := range result.warnings {
-				fmt.Fprintf(os.Stdout, "  WARN  %s  %s\n", w.field, w.message)
+				fmt.Fprintf(os.Stdout, "  %s  %s  %s\n", colorizeStatus("WARN", statusWarn, colorEnabled), w.field, w.message)
 			}
 			fmt.Println()
 		}
@@ -766,6 +897,7 @@ func init() {
 	configShowCmd.Flags().BoolVar(&configShowSources, "sources", false, "annotate values with their source (global/local)")
 	configShowCmd.Flags().BoolVar(&configShowRelativePaths, "relative-paths", false, "show source-annotated paths relative to their config root")
 	configDiffCmd.Flags().BoolVar(&configDiffJSON, "json", false, "emit config diff as JSON")
+	configCmd.PersistentFlags().StringVar(&configColor, "color", "auto", "color output: auto, always, never")
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configPathsCmd)
 	configCmd.AddCommand(configDiffCmd)

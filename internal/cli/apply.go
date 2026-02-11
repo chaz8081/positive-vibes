@@ -20,6 +20,17 @@ var (
 	applyGlobal  bool
 )
 
+func globalApplyNoOpMessage(m *manifest.Manifest) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	resourceCount := len(m.Skills) + len(m.Instructions) + len(m.Agents)
+	if resourceCount > 0 {
+		return "", false
+	}
+	return "No-op: global config has no installable resources (skills, instructions, or agents).", true
+}
+
 func resolveManifestForApply(project, globalPath string, globalOnly bool) (*manifest.Manifest, error) {
 	if globalOnly {
 		if _, err := os.Stat(globalPath); err != nil {
@@ -84,6 +95,11 @@ var applyCmd = &cobra.Command{
 			}
 			if warning := formatOverrideWarnings(manifest.ComputeRiskyOverrideDiagnostics(globalM, localM)); warning != "" {
 				fmt.Print(warning)
+			}
+		} else {
+			if msg, skip := globalApplyNoOpMessage(merged); skip {
+				fmt.Println(msg)
+				return
 			}
 		}
 

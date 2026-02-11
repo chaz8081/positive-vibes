@@ -2,14 +2,36 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/chaz8081/positive-vibes/internal/registry"
+	"github.com/chaz8081/positive-vibes/pkg/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeSkillSource struct {
+	name string
+	list []string
+	err  error
+}
+
+func (f fakeSkillSource) Name() string { return f.name }
+
+func (f fakeSkillSource) Fetch(name string) (*schema.Skill, string, error) {
+	return nil, "", errors.New("not implemented")
+}
+
+func (f fakeSkillSource) List() ([]string, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.list, nil
+}
 
 // --- formatPaths tests ---
 
@@ -722,4 +744,49 @@ func TestConfigDiffCommand_HasJSONFlag(t *testing.T) {
 	f := configDiffCmd.Flags().Lookup("json")
 	require.NotNil(t, f)
 	assert.Equal(t, "bool", f.Value.Type())
+}
+
+func TestRelativePathsNoEffectNote(t *testing.T) {
+	m := &manifest.Manifest{
+		Skills:       []manifest.SkillRef{{Name: "s"}},
+		Instructions: []manifest.InstructionRef{{Name: "i", Content: "x"}},
+		Targets:      []string{"opencode"},
+	}
+	msg := relativePathsNoEffectNote(m)
+	assert.Contains(t, msg, "no path entries")
+}
+
+func TestColorizeStatus(t *testing.T) {
+	colored := colorizeStatus("ok", statusOK, true)
+	plain := colorizeStatus("ok", statusOK, false)
+	assert.Contains(t, colored, "\u001b[")
+	assert.Equal(t, "ok", plain)
+}
+
+func TestCollectAvailableSkillsFromSources_ReturnsSkillSetAndWarnings(t *testing.T) {
+	sources := []fakeSkillSource{
+		{name: "embedded", list: []string{"a", "b"}},
+		{name: "broken-reg", err: errors.New("offline")},
+		{name: "other", list: []string{"b", "c"}},
+	}
+	registrySources := []registry.SkillSource{sources[0], sources[1], sources[2]}
+
+	set, warns := collectAvailableSkillsFromSources(registrySources)
+	assert.True(t, set["a"])
+	assert.True(t, set["b"])
+	assert.True(t, set["c"])
+	require.Len(t, warns, 1)
+	assert.Equal(t, "registry/broken-reg", warns[0].field)
+}
+
+func TestValidateConfigWithContext_UnknownSkillWarnsWhenRegistryUnavailable(t *testing.T) {
+	m := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "missing-skill"}},
+		Targets: []string{"opencode"},
+	}
+	result := validateConfigWithContext(m, []string{}, true, nil, nil, "broken-reg")
+
+	assert.True(t, result.ok(), "missing skill should be warning-only when registry lookup failed")
+	require.NotEmpty(t, result.warnings)
+	assert.Contains(t, result.warnings[0].message, "could not verify")
 }

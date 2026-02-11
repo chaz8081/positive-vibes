@@ -93,3 +93,15 @@ func TestApplyCommand_HasGlobalFlag(t *testing.T) {
 	require.NotNil(t, f)
 	assert.Equal(t, "bool", f.Value.Type())
 }
+
+func TestGlobalApplyNoOpMessage_WhenNoInstallableResources(t *testing.T) {
+	m := &manifest.Manifest{
+		Registries: []manifest.RegistryRef{{Name: "r", URL: "https://example.com/r", Ref: "latest"}},
+		Targets:    []string{"opencode"},
+	}
+
+	msg, skip := globalApplyNoOpMessage(m)
+	assert.True(t, skip)
+	assert.Contains(t, msg, "No-op")
+	assert.Contains(t, msg, "global config has no installable resources")
+}
