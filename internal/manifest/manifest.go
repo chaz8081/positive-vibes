@@ -33,6 +33,14 @@ type OverrideDiagnostics struct {
 	Agents       []string
 }
 
+// RiskyOverrideDiagnostics describes overrides that change how an entry is sourced.
+// These are higher-signal than name-only overrides.
+type RiskyOverrideDiagnostics struct {
+	Skills       []string
+	Instructions []string
+	Agents       []string
+}
+
 // ComputeOverrideDiagnostics returns resource names defined in both global and local manifests.
 func ComputeOverrideDiagnostics(global, local *Manifest) OverrideDiagnostics {
 	if global == nil || local == nil {
@@ -83,6 +91,61 @@ func ComputeOverrideDiagnostics(global, local *Manifest) OverrideDiagnostics {
 	sort.Strings(d.Instructions)
 	sort.Strings(d.Agents)
 	return d
+}
+
+// ComputeRiskyOverrideDiagnostics reports only overrides that change resource shape:
+// - Skills: registry/embedded-style -> path-style (or inverse)
+// - Instructions: content -> path (or inverse)
+// - Agents: registry -> path (or inverse)
+func ComputeRiskyOverrideDiagnostics(global, local *Manifest) RiskyOverrideDiagnostics {
+	if global == nil || local == nil {
+		return RiskyOverrideDiagnostics{}
+	}
+
+	globalSkills := make(map[string]SkillRef)
+	for _, s := range global.Skills {
+		globalSkills[s.Name] = s
+	}
+	globalInst := make(map[string]InstructionRef)
+	for _, i := range global.Instructions {
+		globalInst[i.Name] = i
+	}
+	globalAgents := make(map[string]AgentRef)
+	for _, a := range global.Agents {
+		globalAgents[a.Name] = a
+	}
+
+	r := RiskyOverrideDiagnostics{}
+	for _, s := range local.Skills {
+		if gs, ok := globalSkills[s.Name]; ok {
+			if (gs.Path == "") != (s.Path == "") {
+				r.Skills = append(r.Skills, s.Name)
+			}
+		}
+	}
+	for _, i := range local.Instructions {
+		if gi, ok := globalInst[i.Name]; ok {
+			globalUsesPath := gi.Path != ""
+			localUsesPath := i.Path != ""
+			if globalUsesPath != localUsesPath {
+				r.Instructions = append(r.Instructions, i.Name)
+			}
+		}
+	}
+	for _, a := range local.Agents {
+		if ga, ok := globalAgents[a.Name]; ok {
+			globalUsesPath := ga.Path != ""
+			localUsesPath := a.Path != ""
+			if globalUsesPath != localUsesPath {
+				r.Agents = append(r.Agents, a.Name)
+			}
+		}
+	}
+
+	sort.Strings(r.Skills)
+	sort.Strings(r.Instructions)
+	sort.Strings(r.Agents)
+	return r
 }
 
 // SkillRef is a reference to a skill in the manifest.
@@ -259,13 +322,13 @@ func LoadMergedManifest(projectDir string, globalPath string) (*Manifest, error)
 		if err != nil {
 			return nil, fmt.Errorf("parse global manifest: %w", err)
 		}
-		resolveManifestPaths(g, filepath.Dir(globalPath))
+		ResolveManifestPaths(g, filepath.Dir(globalPath))
 		global = g
 	}
 
 	// Load project manifest (optional)
 	if p, pPath, err := LoadManifestFromProject(projectDir); err == nil {
-		resolveManifestPaths(p, filepath.Dir(pPath))
+		ResolveManifestPaths(p, filepath.Dir(pPath))
 		project = p
 	}
 
@@ -368,9 +431,9 @@ func LoadMergedManifest(projectDir string, globalPath string) (*Manifest, error)
 	return merged, nil
 }
 
-// resolveManifestPaths converts relative paths inside a manifest to absolute
+// ResolveManifestPaths converts relative paths inside a manifest to absolute
 // paths using baseDir as the source root.
-func resolveManifestPaths(m *Manifest, baseDir string) {
+func ResolveManifestPaths(m *Manifest, baseDir string) {
 	if m == nil || baseDir == "" {
 		return
 	}

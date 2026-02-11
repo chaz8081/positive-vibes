@@ -649,6 +649,21 @@ targets:
 	assert.Equal(t, filepath.Join(projectDir, "agents", "local.md"), agentMap["local-agent"].Path)
 }
 
+func TestResolveManifestPaths_ConvertsRelativeToAbsolute(t *testing.T) {
+	base := t.TempDir()
+	m := &Manifest{
+		Skills:       []SkillRef{{Name: "s", Path: "./skills/s"}},
+		Instructions: []InstructionRef{{Name: "i", Path: "./instructions/i.md"}},
+		Agents:       []AgentRef{{Name: "a", Path: "./agents/a.md"}},
+	}
+
+	ResolveManifestPaths(m, base)
+
+	assert.Equal(t, filepath.Join(base, "skills", "s"), m.Skills[0].Path)
+	assert.Equal(t, filepath.Join(base, "instructions", "i.md"), m.Instructions[0].Path)
+	assert.Equal(t, filepath.Join(base, "agents", "a.md"), m.Agents[0].Path)
+}
+
 // --- InstructionRef validation tests ---
 
 func TestValidate_InstructionRef_Valid(t *testing.T) {

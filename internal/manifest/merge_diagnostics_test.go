@@ -30,3 +30,30 @@ func TestComputeOverrideDiagnostics(t *testing.T) {
 	assert.Equal(t, []string{"shared-inst"}, d.Instructions)
 	assert.Equal(t, []string{"shared-agent"}, d.Agents)
 }
+
+func TestComputeRiskyOverrideDiagnostics(t *testing.T) {
+	global := &Manifest{
+		Skills: []SkillRef{{Name: "same-shape", Path: "./a"}, {Name: "risky-skill"}},
+		Instructions: []InstructionRef{
+			{Name: "risky-inst", Content: "global"},
+		},
+		Agents: []AgentRef{
+			{Name: "risky-agent", Registry: "embedded"},
+		},
+	}
+	local := &Manifest{
+		Skills: []SkillRef{{Name: "same-shape", Path: "./b"}, {Name: "risky-skill", Path: "./local"}},
+		Instructions: []InstructionRef{
+			{Name: "risky-inst", Path: "./inst.md"},
+		},
+		Agents: []AgentRef{
+			{Name: "risky-agent", Path: "./agent.md"},
+		},
+	}
+
+	d := ComputeRiskyOverrideDiagnostics(global, local)
+
+	assert.Equal(t, []string{"risky-skill"}, d.Skills)
+	assert.Equal(t, []string{"risky-inst"}, d.Instructions)
+	assert.Equal(t, []string{"risky-agent"}, d.Agents)
+}

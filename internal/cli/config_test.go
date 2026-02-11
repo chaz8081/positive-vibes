@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -682,4 +683,43 @@ func TestFormatConfigDiff_IncludesGlobalLocalAndOverrides(t *testing.T) {
 	assert.Contains(t, out, "shared")
 	assert.Contains(t, out, "inst-shared")
 	assert.Contains(t, out, "Effective config summary:")
+}
+
+func TestFormatConfigDiffJSON_ParsesAndContainsKeys(t *testing.T) {
+	global := &manifest.Manifest{Skills: []manifest.SkillRef{{Name: "global-only"}}}
+	local := &manifest.Manifest{Skills: []manifest.SkillRef{{Name: "local-only"}}}
+	merged := &manifest.Manifest{Skills: []manifest.SkillRef{{Name: "global-only"}, {Name: "local-only"}}}
+
+	jsonOut, err := formatConfigDiffJSON(global, local, merged)
+	require.NoError(t, err)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal([]byte(jsonOut), &decoded))
+	assert.Contains(t, decoded, "global_only")
+	assert.Contains(t, decoded, "local_only")
+	assert.Contains(t, decoded, "overrides")
+	assert.Contains(t, decoded, "effective_summary")
+}
+
+func TestBuildConfigDiffOutput_TextAndJSON(t *testing.T) {
+	projectDir := t.TempDir()
+	globalDir := t.TempDir()
+
+	globalPath := filepath.Join(globalDir, "vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte("skills:\n  - name: global-only\ntargets:\n  - opencode\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "vibes.yaml"), []byte("skills:\n  - name: local-only\ntargets:\n  - cursor\n"), 0o644))
+
+	textOut, err := buildConfigDiffOutput(projectDir, globalPath, false)
+	require.NoError(t, err)
+	assert.Contains(t, textOut, "Global-only:")
+
+	jsonOut, err := buildConfigDiffOutput(projectDir, globalPath, true)
+	require.NoError(t, err)
+	assert.Contains(t, jsonOut, "\"effective_summary\"")
+}
+
+func TestConfigDiffCommand_HasJSONFlag(t *testing.T) {
+	f := configDiffCmd.Flags().Lookup("json")
+	require.NotNil(t, f)
+	assert.Equal(t, "bool", f.Value.Type())
 }

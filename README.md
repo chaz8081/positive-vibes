@@ -100,6 +100,7 @@ When both exist, they are merged:
 - **Agents**: combined by name; project overrides global for same name
 - **Targets**: project targets override global entirely
 - **Paths**: relative `path` entries are resolved from the manifest they came from
+- **Warnings**: `config validate` warns on risky overrides that change source type (e.g., `content` -> `path`, or registry -> path)
 
 The global config path respects `$XDG_CONFIG_HOME` if set.
 
@@ -168,6 +169,7 @@ Add `ref: latest` to preserve the previous behavior.
 | `positive-vibes config show`     | Show merged config with source annotations       |
 | `positive-vibes config show --sources --relative-paths` | Show source-annotated paths relative to each config root |
 | `positive-vibes config diff`     | Show global-only, local-only, overrides, and effective summary |
+| `positive-vibes config diff --json` | Emit the same config diff as machine-readable JSON |
 | `positive-vibes config validate` | Validate manifest and check for issues           |
 | `positive-vibes generate <desc>` | Generate a custom skill from a description       |
 

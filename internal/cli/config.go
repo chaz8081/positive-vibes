@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -360,15 +361,15 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 	}
 
 	if global != nil && local != nil {
-		d := manifest.ComputeOverrideDiagnostics(global, local)
+		d := manifest.ComputeRiskyOverrideDiagnostics(global, local)
 		for _, name := range d.Skills {
-			result.warn(name, "local skill overrides global skill with same name")
+			result.warn(name, "local skill switches source type (path vs registry/embedded)")
 		}
 		for _, name := range d.Instructions {
-			result.warn(name, "local instruction overrides global instruction with same name")
+			result.warn(name, "local instruction switches source type (content vs path)")
 		}
 		for _, name := range d.Agents {
-			result.warn(name, "local agent overrides global agent with same name")
+			result.warn(name, "local agent switches source type (path vs registry)")
 		}
 	}
 
@@ -477,10 +478,81 @@ func formatConfigDiff(global, local, merged *manifest.Manifest) string {
 	return b.String()
 }
 
+func formatConfigDiffJSON(global, local, merged *manifest.Manifest) (string, error) {
+	if global == nil {
+		global = &manifest.Manifest{}
+	}
+	if local == nil {
+		local = &manifest.Manifest{}
+	}
+	if merged == nil {
+		merged = &manifest.Manifest{}
+	}
+
+	globalSkills := namesFromSkills(global.Skills)
+	localSkills := namesFromSkills(local.Skills)
+	globalInst := namesFromInstructions(global.Instructions)
+	localInst := namesFromInstructions(local.Instructions)
+	globalAgents := namesFromAgents(global.Agents)
+	localAgents := namesFromAgents(local.Agents)
+
+	payload := map[string]any{
+		"global_only": map[string]any{
+			"skills":       setDiff(globalSkills, localSkills),
+			"instructions": setDiff(globalInst, localInst),
+			"agents":       setDiff(globalAgents, localAgents),
+		},
+		"local_only": map[string]any{
+			"skills":       setDiff(localSkills, globalSkills),
+			"instructions": setDiff(localInst, globalInst),
+			"agents":       setDiff(localAgents, globalAgents),
+		},
+		"overrides": map[string]any{
+			"all":   manifest.ComputeOverrideDiagnostics(global, local),
+			"risky": manifest.ComputeRiskyOverrideDiagnostics(global, local),
+		},
+		"effective_summary": map[string]any{
+			"registries":   len(merged.Registries),
+			"skills":       len(merged.Skills),
+			"instructions": len(merged.Instructions),
+			"agents":       len(merged.Agents),
+			"targets":      len(merged.Targets),
+		},
+	}
+	b, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b) + "\n", nil
+}
+
+func buildConfigDiffOutput(project, globalPath string, asJSON bool) (string, error) {
+	var global, local *manifest.Manifest
+	if data, err := os.ReadFile(globalPath); err == nil {
+		if g, err := manifest.LoadManifestFromBytes(data); err == nil {
+			global = g
+		}
+	}
+	if p, _, err := manifest.LoadManifestFromProject(project); err == nil {
+		local = p
+	}
+
+	merged, err := manifest.LoadMergedManifest(project, globalPath)
+	if err != nil {
+		return "", fmt.Errorf("no config found (checked %s and %s)", globalPath, project)
+	}
+
+	if asJSON {
+		return formatConfigDiffJSON(global, local, merged)
+	}
+	return formatConfigDiff(global, local, merged), nil
+}
+
 // --- Cobra commands ---
 
 var configShowSources bool
 var configShowRelativePaths bool
+var configDiffJSON bool
 
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -565,24 +637,12 @@ var configDiffCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
-
-		var global, local *manifest.Manifest
-		if data, err := os.ReadFile(globalPath); err == nil {
-			if g, err := manifest.LoadManifestFromBytes(data); err == nil {
-				global = g
-			}
-		}
-		if p, _, err := manifest.LoadManifestFromProject(project); err == nil {
-			local = p
-		}
-
-		merged, err := manifest.LoadMergedManifest(project, globalPath)
+		out, err := buildConfigDiffOutput(project, globalPath, configDiffJSON)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "No config found (checked %s and %s)\n", globalPath, project)
+			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
-
-		fmt.Print(formatConfigDiff(global, local, merged))
+		fmt.Print(out)
 	},
 }
 
@@ -705,6 +765,7 @@ Exits with code 1 if any problems are found.`,
 func init() {
 	configShowCmd.Flags().BoolVar(&configShowSources, "sources", false, "annotate values with their source (global/local)")
 	configShowCmd.Flags().BoolVar(&configShowRelativePaths, "relative-paths", false, "show source-annotated paths relative to their config root")
+	configDiffCmd.Flags().BoolVar(&configDiffJSON, "json", false, "emit config diff as JSON")
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configPathsCmd)
 	configCmd.AddCommand(configDiffCmd)

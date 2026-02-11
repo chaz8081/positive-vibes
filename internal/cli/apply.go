@@ -29,23 +29,7 @@ func resolveManifestForApply(project, globalPath string, globalOnly bool) (*mani
 		if err != nil {
 			return nil, fmt.Errorf("error loading global manifest: %w", err)
 		}
-
-		base := filepath.Dir(globalPath)
-		for i := range m.Skills {
-			if m.Skills[i].Path != "" && !filepath.IsAbs(m.Skills[i].Path) {
-				m.Skills[i].Path = filepath.Join(base, m.Skills[i].Path)
-			}
-		}
-		for i := range m.Instructions {
-			if m.Instructions[i].Path != "" && !filepath.IsAbs(m.Instructions[i].Path) {
-				m.Instructions[i].Path = filepath.Join(base, m.Instructions[i].Path)
-			}
-		}
-		for i := range m.Agents {
-			if m.Agents[i].Path != "" && !filepath.IsAbs(m.Agents[i].Path) {
-				m.Agents[i].Path = filepath.Join(base, m.Agents[i].Path)
-			}
-		}
+		manifest.ResolveManifestPaths(m, filepath.Dir(globalPath))
 		return m, nil
 	}
 
@@ -61,11 +45,8 @@ func resolveManifestForApply(project, globalPath string, globalOnly bool) (*mani
 	return merged, nil
 }
 
-func formatOverrideWarnings(d manifest.OverrideDiagnostics) string {
+func formatOverrideWarnings(d manifest.RiskyOverrideDiagnostics) string {
 	var lines []string
-	if len(d.Registries) > 0 {
-		lines = append(lines, "- registries: "+strings.Join(d.Registries, ", "))
-	}
 	if len(d.Skills) > 0 {
 		lines = append(lines, "- skills: "+strings.Join(d.Skills, ", "))
 	}
@@ -78,7 +59,7 @@ func formatOverrideWarnings(d manifest.OverrideDiagnostics) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	return "Warning: local config overrides global entries:\n" + strings.Join(lines, "\n") + "\n"
+	return "Warning: local config overrides change resource source type:\n" + strings.Join(lines, "\n") + "\n"
 }
 
 var applyCmd = &cobra.Command{
@@ -101,7 +82,7 @@ var applyCmd = &cobra.Command{
 			if m, _, loadErr := manifest.LoadManifestFromProject(project); loadErr == nil {
 				localM = m
 			}
-			if warning := formatOverrideWarnings(manifest.ComputeOverrideDiagnostics(globalM, localM)); warning != "" {
+			if warning := formatOverrideWarnings(manifest.ComputeRiskyOverrideDiagnostics(globalM, localM)); warning != "" {
 				fmt.Print(warning)
 			}
 		}
