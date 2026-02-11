@@ -534,7 +534,7 @@ func TestValidateConfig_GlobalOnly_NoSkillsOrTargets_IsOK(t *testing.T) {
 }
 
 func TestValidateConfig_WithLocalConfig_NoSkills_IsError(t *testing.T) {
-	// When local config exists, missing skills IS a problem.
+	// When local config exists, missing all resources IS a problem.
 	m := &manifest.Manifest{
 		Skills:  nil,
 		Targets: []string{"opencode"},
@@ -544,11 +544,11 @@ func TestValidateConfig_WithLocalConfig_NoSkills_IsError(t *testing.T) {
 	assert.False(t, result.ok())
 	found := false
 	for _, p := range result.problems {
-		if p.field == "skills" {
+		if p.field == "resources" {
 			found = true
 		}
 	}
-	assert.True(t, found, "should report missing skills when local config present")
+	assert.True(t, found, "should report missing resources when local config present")
 }
 
 func TestValidateConfig_WithLocalConfig_NoTargets_IsError(t *testing.T) {
@@ -578,9 +578,20 @@ func TestValidateConfig_GlobalOnly_StillValidatesOtherChecks(t *testing.T) {
 
 	result := validateConfig(m, nil, false) // hasLocalConfig=false
 	assert.False(t, result.ok(), "global-only should still catch invalid targets and bad paths")
-	// Should have problems for invalid target and missing path, but NOT for "no skills" or "no targets"
+	// Should have problems for invalid target and missing path, but NOT for
+	// "no resources" or "no targets"
 	for _, p := range result.problems {
-		assert.NotEqual(t, "skills", p.field, "should not flag 'no skills' in global-only")
+		assert.NotEqual(t, "resources", p.field, "should not flag 'no resources' in global-only")
 		assert.NotEqual(t, "targets", p.field, "should not flag 'no targets' in global-only")
 	}
+}
+
+func TestValidateConfig_WithLocalConfig_InstructionOnly_IsOK(t *testing.T) {
+	m := &manifest.Manifest{
+		Instructions: []manifest.InstructionRef{{Name: "inst", Content: "be kind"}},
+		Targets:      []string{"opencode"},
+	}
+
+	result := validateConfig(m, nil, true)
+	assert.True(t, result.ok(), "instruction-only config should be valid when targets are set")
 }

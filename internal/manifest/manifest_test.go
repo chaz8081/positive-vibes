@@ -101,7 +101,23 @@ func TestValidate_NoSkills(t *testing.T) {
 	}
 	err := m.Validate()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at least one skill")
+	assert.Contains(t, err.Error(), "at least one resource")
+}
+
+func TestValidate_InstructionOnly_Valid(t *testing.T) {
+	m := &Manifest{
+		Instructions: []InstructionRef{{Name: "inst", Content: "do thing"}},
+		Targets:      []string{"opencode"},
+	}
+	require.NoError(t, m.Validate())
+}
+
+func TestValidate_AgentOnly_Valid(t *testing.T) {
+	m := &Manifest{
+		Agents:  []AgentRef{{Name: "agent", Path: "./agents/agent.md"}},
+		Targets: []string{"opencode"},
+	}
+	require.NoError(t, m.Validate())
 }
 
 func TestValidate_InvalidTarget(t *testing.T) {
@@ -442,7 +458,7 @@ targets:
 		skillMap[s.Name] = s
 	}
 	// shared-skill should use project version (project overrides)
-	assert.Equal(t, "./local/shared", skillMap["shared-skill"].Path)
+	assert.Equal(t, filepath.Join(projectDir, "local", "shared"), skillMap["shared-skill"].Path)
 	assert.Contains(t, skillMap, "global-only-skill")
 	assert.Contains(t, skillMap, "project-only-skill")
 }
@@ -561,10 +577,10 @@ agents:
 		agentMap[a.Name] = a
 	}
 	// shared-agent should use project (path overrides registry)
-	assert.Equal(t, "./local-agent.md", agentMap["shared-agent"].Path)
+	assert.Equal(t, filepath.Join(projectDir, "local-agent.md"), agentMap["shared-agent"].Path)
 	assert.Empty(t, agentMap["shared-agent"].Registry)
 	assert.Equal(t, "global-reg", agentMap["global-only-agent"].Registry)
-	assert.Equal(t, "./project-agent.md", agentMap["project-only-agent"].Path)
+	assert.Equal(t, filepath.Join(projectDir, "project-agent.md"), agentMap["project-only-agent"].Path)
 }
 
 func TestLoadMergedManifest_NeitherExists(t *testing.T) {
@@ -574,6 +590,63 @@ func TestLoadMergedManifest_NeitherExists(t *testing.T) {
 	_, err := LoadMergedManifest(projectDir, globalPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no manifest found")
+}
+
+func TestLoadMergedManifest_ResolvesRelativePathsPerManifestSource(t *testing.T) {
+	projectDir := t.TempDir()
+	globalDir := t.TempDir()
+
+	globalContent := `skills:
+  - name: shared-skill
+    path: ./global-skill
+instructions:
+  - name: global-inst
+    path: ./instructions/global.md
+agents:
+  - name: global-agent
+    path: ./agents/global.md
+targets:
+  - opencode
+`
+	projectContent := `skills:
+  - name: local-skill
+    path: ./project-skill
+instructions:
+  - name: local-inst
+    path: ./instructions/local.md
+agents:
+  - name: local-agent
+    path: ./agents/local.md
+targets:
+  - opencode
+`
+	globalPath := filepath.Join(globalDir, "vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte(globalContent), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "vibes.yaml"), []byte(projectContent), 0o644))
+
+	m, err := LoadMergedManifest(projectDir, globalPath)
+	require.NoError(t, err)
+
+	skillMap := map[string]SkillRef{}
+	for _, s := range m.Skills {
+		skillMap[s.Name] = s
+	}
+	assert.Equal(t, filepath.Join(globalDir, "global-skill"), skillMap["shared-skill"].Path)
+	assert.Equal(t, filepath.Join(projectDir, "project-skill"), skillMap["local-skill"].Path)
+
+	instMap := map[string]InstructionRef{}
+	for _, inst := range m.Instructions {
+		instMap[inst.Name] = inst
+	}
+	assert.Equal(t, filepath.Join(globalDir, "instructions", "global.md"), instMap["global-inst"].Path)
+	assert.Equal(t, filepath.Join(projectDir, "instructions", "local.md"), instMap["local-inst"].Path)
+
+	agentMap := map[string]AgentRef{}
+	for _, a := range m.Agents {
+		agentMap[a.Name] = a
+	}
+	assert.Equal(t, filepath.Join(globalDir, "agents", "global.md"), agentMap["global-agent"].Path)
+	assert.Equal(t, filepath.Join(projectDir, "agents", "local.md"), agentMap["local-agent"].Path)
 }
 
 // --- InstructionRef validation tests ---

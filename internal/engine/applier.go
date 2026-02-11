@@ -62,6 +62,16 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 	if err != nil {
 		return nil, fmt.Errorf("load manifest: %w", err)
 	}
+	projectDir := filepath.Dir(manifestPath)
+	return a.ApplyManifest(m, projectDir, opts)
+}
+
+// ApplyManifest installs resources from an already-loaded manifest.
+// projectDir is used as the base for resolving relative resource paths.
+func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts target.InstallOpts) (*ApplyResult, error) {
+	if m == nil {
+		return nil, fmt.Errorf("manifest is nil")
+	}
 	if err := m.Validate(); err != nil {
 		return nil, fmt.Errorf("validate manifest: %w", err)
 	}
@@ -72,8 +82,6 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 	}
 
 	res := &ApplyResult{}
-
-	projectDir := filepath.Dir(manifestPath)
 
 	// iterate skills
 	for _, s := range m.Skills {
@@ -120,7 +128,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 
 		// install to each target
 		for _, t := range targets {
-			if t.SkillExists(sk.Name, filepath.Dir(manifestPath)) {
+			if t.SkillExists(sk.Name, projectDir) {
 				if !opts.Force {
 					res.Skipped++
 					res.Ops = append(res.Ops, ApplyOp{
@@ -132,7 +140,7 @@ func (a *Applier) Apply(manifestPath string, opts target.InstallOpts) (*ApplyRes
 					continue
 				}
 			}
-			if err := t.Install(sk, srcDir, filepath.Dir(manifestPath), opts); err != nil {
+			if err := t.Install(sk, srcDir, projectDir, opts); err != nil {
 				errMsg := fmt.Sprintf("install %s -> %s: %v", sk.Name, t.Name(), err)
 				res.Errors = append(res.Errors, errMsg)
 				res.Ops = append(res.Ops, ApplyOp{

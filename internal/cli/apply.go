@@ -23,9 +23,9 @@ var applyCmd = &cobra.Command{
 		project := ProjectDir()
 
 		// Check if any manifest exists in project
-		_, manifestPath, err := manifest.LoadManifestFromProject(project)
+		_, _, err := manifest.LoadManifestFromProject(project)
 		if err != nil {
-			fmt.Printf("no manifest found in %s - run 'vibes init' first\n", project)
+			fmt.Printf("no manifest found in %s - run 'positive-vibes init' first\n", project)
 			return
 		}
 
@@ -58,7 +58,7 @@ var applyCmd = &cobra.Command{
 
 		fmt.Println("Aligning your AI tools...")
 		fmt.Println()
-		res, err := applier.Apply(manifestPath, opts)
+		res, err := applier.ApplyManifest(merged, project, opts)
 		if err != nil {
 			fmt.Printf("error: %v\n", err)
 			return

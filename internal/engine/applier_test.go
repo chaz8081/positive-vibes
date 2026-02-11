@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/chaz8081/positive-vibes/internal/target"
 )
@@ -72,6 +73,90 @@ skills:
 	}
 	if res.Installed == 0 {
 		t.Fatalf("expected installed > 0, got 0, errors: %v", res.Errors)
+	}
+}
+
+func TestApplierApplyManifest_UsesMergedResources(t *testing.T) {
+	tmp := t.TempDir()
+
+	merged := &manifest.Manifest{
+		Skills: []manifest.SkillRef{{Name: "conventional-commits"}},
+		Instructions: []manifest.InstructionRef{{
+			Name:    "global-inst",
+			Content: "Global instruction should be installed.",
+		}},
+		Targets: []string{"opencode"},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.ApplyManifest(merged, tmp, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply manifest error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	instFile := filepath.Join(tmp, ".opencode", "instructions", "global-inst.md")
+	if _, err := os.Stat(instFile); err != nil {
+		t.Fatalf("expected merged instruction to be installed, got: %v", err)
+	}
+}
+
+func TestApplierApplyManifest_ResolvesGlobalRelativeInstructionPath(t *testing.T) {
+	projectDir := t.TempDir()
+	globalDir := t.TempDir()
+
+	globalInstPath := filepath.Join(globalDir, "instructions", "global.md")
+	if err := os.MkdirAll(filepath.Dir(globalInstPath), 0o755); err != nil {
+		t.Fatalf("mkdir global instructions: %v", err)
+	}
+	if err := os.WriteFile(globalInstPath, []byte("from global file"), 0o644); err != nil {
+		t.Fatalf("write global instruction: %v", err)
+	}
+
+	globalManifestPath := filepath.Join(globalDir, "vibes.yaml")
+	globalManifest := `instructions:
+  - name: global-inst
+    path: ./instructions/global.md
+`
+	if err := os.WriteFile(globalManifestPath, []byte(globalManifest), 0o644); err != nil {
+		t.Fatalf("write global manifest: %v", err)
+	}
+
+	projectManifestPath := filepath.Join(projectDir, "vibes.yaml")
+	projectManifest := `skills:
+  - name: conventional-commits
+targets:
+  - opencode
+`
+	if err := os.WriteFile(projectManifestPath, []byte(projectManifest), 0o644); err != nil {
+		t.Fatalf("write project manifest: %v", err)
+	}
+
+	merged, err := manifest.LoadMergedManifest(projectDir, globalManifestPath)
+	if err != nil {
+		t.Fatalf("load merged manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.ApplyManifest(merged, projectDir, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply manifest error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	instFile := filepath.Join(projectDir, ".opencode", "instructions", "global-inst.md")
+	data, err := os.ReadFile(instFile)
+	if err != nil {
+		t.Fatalf("read installed instruction: %v", err)
+	}
+	if string(data) != "from global file" {
+		t.Fatalf("unexpected instruction content: %q", string(data))
 	}
 }
 

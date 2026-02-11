@@ -4,7 +4,6 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -43,7 +42,7 @@ func (e *EmbeddedRegistry) Fetch(name string) (*schema.Skill, string, error) {
 	}
 
 	// write to temp dir
-	tmp, err := ioutil.TempDir("", "pv-skill-")
+	tmp, err := os.MkdirTemp("", "pv-skill-")
 	if err != nil {
 		return nil, "", err
 	}
@@ -54,7 +53,7 @@ func (e *EmbeddedRegistry) Fetch(name string) (*schema.Skill, string, error) {
 		return nil, "", err
 	}
 
-	if err := ioutil.WriteFile(filepath.Join(skillDir, "SKILL.md"), b, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), b, 0o644); err != nil {
 		return nil, "", err
 	}
 

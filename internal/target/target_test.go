@@ -132,6 +132,20 @@ func TestTarget_Install_Link(t *testing.T) {
 	assert.True(t, fi.Mode()&os.ModeSymlink != 0)
 }
 
+func TestTarget_Install_ReturnsErrorWhenSourceDirMissing(t *testing.T) {
+	tmp := t.TempDir()
+	proj := filepath.Join(tmp, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+
+	s := &schema.Skill{Name: "missing-source", Version: "1.0"}
+	missingSourceDir := filepath.Join(tmp, "does-not-exist")
+
+	tgt := OpenCodeTarget{}
+	err := tgt.Install(s, missingSourceDir, proj, InstallOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does-not-exist")
+}
+
 func TestTarget_SkillExists(t *testing.T) {
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "src")

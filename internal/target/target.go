@@ -105,7 +105,7 @@ func installGeneric(skill *schema.Skill, sourceDir, projectRoot, skillDir string
 	// if sourceDir doesn't exist or is same as dest, skip
 	if sourceDir != "" {
 		// walk sourceDir and copy files except SKILL.md
-		filepath.WalkDir(sourceDir, func(path string, d os.DirEntry, err error) error {
+		if err := filepath.WalkDir(sourceDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -126,7 +126,9 @@ func installGeneric(skill *schema.Skill, sourceDir, projectRoot, skillDir string
 				return err
 			}
 			return os.WriteFile(targetPath, data, 0o644)
-		})
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

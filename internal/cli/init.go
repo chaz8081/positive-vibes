@@ -19,7 +19,7 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 	var b strings.Builder
 
 	b.WriteString("# vibes.yaml - positive-vibes configuration\n")
-	b.WriteString("# Run 'vibes apply' to sync skills and instructions to all targets.\n")
+	b.WriteString("# Run 'positive-vibes apply' to sync skills and instructions to all targets.\n")
 	b.WriteString("# Global (~/.config/positive-vibes/vibes.yaml) and project configs are merged automatically; project values take priority.\n")
 	b.WriteString("\n")
 
@@ -255,8 +255,8 @@ var initCmd = &cobra.Command{
 			fmt.Printf("Created %s\n", globalPath)
 		}
 
-		fmt.Println("\nRun 'vibes config validate' to verify your setup.")
-		fmt.Println("Run 'vibes apply' to sync your tools!")
+		fmt.Println("\nRun 'positive-vibes config validate' to verify your setup.")
+		fmt.Println("Run 'positive-vibes apply' to sync your tools!")
 	},
 }
 

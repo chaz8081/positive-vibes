@@ -248,14 +248,15 @@ func validateConfig(m *manifest.Manifest, embeddedSkills []string, hasLocalConfi
 		requireSkillsAndTargets = hasLocalConfig[0]
 	}
 
-	// Check skills defined (only when local config is present)
-	if requireSkillsAndTargets && len(m.Skills) == 0 {
-		result.add("skills", "no skills defined")
-	}
-
-	// Check targets defined (only when local config is present)
-	if requireSkillsAndTargets && len(m.Targets) == 0 {
-		result.add("targets", "no targets defined")
+	// Check resource/target presence (only when local config is present)
+	if requireSkillsAndTargets {
+		resourceCount := len(m.Skills) + len(m.Instructions) + len(m.Agents)
+		if resourceCount == 0 {
+			result.add("resources", "no resources defined (skills, instructions, or agents)")
+		}
+		if resourceCount > 0 && len(m.Targets) == 0 {
+			result.add("targets", "no targets defined")
+		}
 	}
 
 	// Check each target is valid

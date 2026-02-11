@@ -94,10 +94,11 @@ func SaveManifest(m *Manifest, path string) error {
 }
 
 // Validate checks the manifest for correctness.
-// Returns error if: no skills defined, invalid target name, or invalid instruction/agent refs.
+// Returns error if: no resources defined, invalid target name, or invalid instruction/agent refs.
 func (m *Manifest) Validate() error {
-	if len(m.Skills) == 0 {
-		return fmt.Errorf("manifest must define at least one skill")
+	resourceCount := len(m.Skills) + len(m.Instructions) + len(m.Agents)
+	if resourceCount == 0 {
+		return fmt.Errorf("manifest must define at least one resource (skill, instruction, or agent)")
 	}
 	if len(m.Targets) == 0 {
 		return fmt.Errorf("manifest must define at least one target")
@@ -197,11 +198,13 @@ func LoadMergedManifest(projectDir string, globalPath string) (*Manifest, error)
 		if err != nil {
 			return nil, fmt.Errorf("parse global manifest: %w", err)
 		}
+		resolveManifestPaths(g, filepath.Dir(globalPath))
 		global = g
 	}
 
 	// Load project manifest (optional)
-	if p, _, err := LoadManifestFromProject(projectDir); err == nil {
+	if p, pPath, err := LoadManifestFromProject(projectDir); err == nil {
+		resolveManifestPaths(p, filepath.Dir(pPath))
 		project = p
 	}
 
@@ -302,4 +305,27 @@ func LoadMergedManifest(projectDir string, globalPath string) (*Manifest, error)
 	}
 
 	return merged, nil
+}
+
+// resolveManifestPaths converts relative paths inside a manifest to absolute
+// paths using baseDir as the source root.
+func resolveManifestPaths(m *Manifest, baseDir string) {
+	if m == nil || baseDir == "" {
+		return
+	}
+	for i := range m.Skills {
+		if m.Skills[i].Path != "" && !filepath.IsAbs(m.Skills[i].Path) {
+			m.Skills[i].Path = filepath.Join(baseDir, m.Skills[i].Path)
+		}
+	}
+	for i := range m.Instructions {
+		if m.Instructions[i].Path != "" && !filepath.IsAbs(m.Instructions[i].Path) {
+			m.Instructions[i].Path = filepath.Join(baseDir, m.Instructions[i].Path)
+		}
+	}
+	for i := range m.Agents {
+		if m.Agents[i].Path != "" && !filepath.IsAbs(m.Agents[i].Path) {
+			m.Agents[i].Path = filepath.Join(baseDir, m.Agents[i].Path)
+		}
+	}
 }
