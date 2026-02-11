@@ -2,6 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/chaz8081/positive-vibes/internal/engine"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
@@ -14,27 +17,93 @@ var (
 	applyForce   bool
 	applyLink    bool
 	applyRefresh bool
+	applyGlobal  bool
 )
+
+func resolveManifestForApply(project, globalPath string, globalOnly bool) (*manifest.Manifest, error) {
+	if globalOnly {
+		if _, err := os.Stat(globalPath); err != nil {
+			return nil, fmt.Errorf("no global manifest found at %s", globalPath)
+		}
+		m, err := manifest.LoadManifest(globalPath)
+		if err != nil {
+			return nil, fmt.Errorf("error loading global manifest: %w", err)
+		}
+
+		base := filepath.Dir(globalPath)
+		for i := range m.Skills {
+			if m.Skills[i].Path != "" && !filepath.IsAbs(m.Skills[i].Path) {
+				m.Skills[i].Path = filepath.Join(base, m.Skills[i].Path)
+			}
+		}
+		for i := range m.Instructions {
+			if m.Instructions[i].Path != "" && !filepath.IsAbs(m.Instructions[i].Path) {
+				m.Instructions[i].Path = filepath.Join(base, m.Instructions[i].Path)
+			}
+		}
+		for i := range m.Agents {
+			if m.Agents[i].Path != "" && !filepath.IsAbs(m.Agents[i].Path) {
+				m.Agents[i].Path = filepath.Join(base, m.Agents[i].Path)
+			}
+		}
+		return m, nil
+	}
+
+	if _, _, err := manifest.LoadManifestFromProject(project); err != nil {
+		return nil, fmt.Errorf("no manifest found in %s - run 'positive-vibes init' first", project)
+	}
+
+	merged, err := manifest.LoadMergedManifest(project, globalPath)
+	if err != nil {
+		return nil, fmt.Errorf("error loading manifest: %w", err)
+	}
+
+	return merged, nil
+}
+
+func formatOverrideWarnings(d manifest.OverrideDiagnostics) string {
+	var lines []string
+	if len(d.Registries) > 0 {
+		lines = append(lines, "- registries: "+strings.Join(d.Registries, ", "))
+	}
+	if len(d.Skills) > 0 {
+		lines = append(lines, "- skills: "+strings.Join(d.Skills, ", "))
+	}
+	if len(d.Instructions) > 0 {
+		lines = append(lines, "- instructions: "+strings.Join(d.Instructions, ", "))
+	}
+	if len(d.Agents) > 0 {
+		lines = append(lines, "- agents: "+strings.Join(d.Agents, ", "))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "Warning: local config overrides global entries:\n" + strings.Join(lines, "\n") + "\n"
+}
 
 var applyCmd = &cobra.Command{
 	Use:   "apply",
 	Short: "Apply manifest to all targets",
 	Run: func(cmd *cobra.Command, args []string) {
 		project := ProjectDir()
-
-		// Check if any manifest exists in project
-		_, _, err := manifest.LoadManifestFromProject(project)
+		globalPath := defaultGlobalManifestPath()
+		merged, err := resolveManifestForApply(project, globalPath, applyGlobal)
 		if err != nil {
-			fmt.Printf("no manifest found in %s - run 'positive-vibes init' first\n", project)
+			fmt.Printf("%v\n", err)
 			return
 		}
 
-		// Load merged manifest (global + project)
-		globalPath := defaultGlobalManifestPath()
-		merged, err := manifest.LoadMergedManifest(project, globalPath)
-		if err != nil {
-			fmt.Printf("error loading manifest: %v\n", err)
-			return
+		if !applyGlobal {
+			var globalM, localM *manifest.Manifest
+			if data, readErr := os.ReadFile(globalPath); readErr == nil {
+				globalM, _ = manifest.LoadManifestFromBytes(data)
+			}
+			if m, _, loadErr := manifest.LoadManifestFromProject(project); loadErr == nil {
+				localM = m
+			}
+			if warning := formatOverrideWarnings(manifest.ComputeOverrideDiagnostics(globalM, localM)); warning != "" {
+				fmt.Print(warning)
+			}
 		}
 
 		// registries
@@ -98,5 +167,6 @@ func init() {
 	applyCmd.Flags().BoolVarP(&applyForce, "force", "f", false, "overwrite existing skills")
 	applyCmd.Flags().BoolVarP(&applyLink, "link", "l", false, "symlink skills instead of copying")
 	applyCmd.Flags().BoolVar(&applyRefresh, "refresh", false, "pull latest from git registries before applying")
+	applyCmd.Flags().BoolVar(&applyGlobal, "global", false, "apply only global config to current project targets")
 	rootCmd.AddCommand(applyCmd)
 }

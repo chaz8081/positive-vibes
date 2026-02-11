@@ -181,6 +181,43 @@ func TestAnnotateManifest_LocalOnly(t *testing.T) {
 	assert.NotContains(t, out, "[global]")
 }
 
+func TestAnnotateManifestWithOptions_RelativePathsForLocal(t *testing.T) {
+	projectDir := t.TempDir()
+	local := &manifest.Manifest{
+		Skills: []manifest.SkillRef{{
+			Name: "local-skill",
+			Path: filepath.Join(projectDir, "skills", "local-skill"),
+		}},
+		Targets: []string{"opencode"},
+	}
+
+	out := annotateManifestWithOptions(nil, local, local, annotateRenderOptions{
+		RelativePaths: true,
+		ProjectDir:    projectDir,
+	})
+
+	assert.Contains(t, out, "path: ./skills/local-skill")
+}
+
+func TestAnnotateManifestWithOptions_RelativePathsForGlobal(t *testing.T) {
+	globalDir := t.TempDir()
+	globalPath := filepath.Join(globalDir, "vibes.yaml")
+	global := &manifest.Manifest{
+		Skills: []manifest.SkillRef{{
+			Name: "global-skill",
+			Path: filepath.Join(globalDir, "skills", "global-skill"),
+		}},
+		Targets: []string{"opencode"},
+	}
+
+	out := annotateManifestWithOptions(global, nil, global, annotateRenderOptions{
+		RelativePaths: true,
+		GlobalPath:    globalPath,
+	})
+
+	assert.Contains(t, out, "path: ./skills/global-skill")
+}
+
 func TestAnnotateManifest_InstructionSources(t *testing.T) {
 	global := &manifest.Manifest{
 		Skills:  []manifest.SkillRef{{Name: "s"}},
@@ -594,4 +631,55 @@ func TestValidateConfig_WithLocalConfig_InstructionOnly_IsOK(t *testing.T) {
 
 	result := validateConfig(m, nil, true)
 	assert.True(t, result.ok(), "instruction-only config should be valid when targets are set")
+}
+
+func TestValidateConfig_WithContext_WarnsOnOverrides(t *testing.T) {
+	localPath := filepath.Join(t.TempDir(), "shared")
+	require.NoError(t, os.MkdirAll(localPath, 0o755))
+
+	global := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "shared"}},
+		Targets: []string{"opencode"},
+	}
+	local := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "shared", Path: localPath}},
+		Targets: []string{"opencode"},
+	}
+	merged := &manifest.Manifest{
+		Skills:  []manifest.SkillRef{{Name: "shared", Path: localPath}},
+		Targets: []string{"opencode"},
+	}
+
+	result := validateConfigWithContext(merged, nil, true, global, local)
+	assert.True(t, result.ok(), "override warning should not fail validation")
+	assert.NotEmpty(t, result.warnings)
+	assert.Equal(t, "shared", result.warnings[0].field)
+}
+
+func TestFormatConfigDiff_IncludesGlobalLocalAndOverrides(t *testing.T) {
+	global := &manifest.Manifest{
+		Skills:       []manifest.SkillRef{{Name: "shared"}, {Name: "global-only"}},
+		Instructions: []manifest.InstructionRef{{Name: "inst-shared", Content: "global"}},
+		Targets:      []string{"opencode"},
+	}
+	local := &manifest.Manifest{
+		Skills:       []manifest.SkillRef{{Name: "shared"}, {Name: "local-only"}},
+		Instructions: []manifest.InstructionRef{{Name: "inst-shared", Content: "local"}},
+		Targets:      []string{"cursor"},
+	}
+	merged := &manifest.Manifest{
+		Skills:       []manifest.SkillRef{{Name: "shared"}, {Name: "global-only"}, {Name: "local-only"}},
+		Instructions: []manifest.InstructionRef{{Name: "inst-shared", Content: "local"}},
+		Targets:      []string{"cursor"},
+	}
+
+	out := formatConfigDiff(global, local, merged)
+	assert.Contains(t, out, "Global-only:")
+	assert.Contains(t, out, "global-only")
+	assert.Contains(t, out, "Local-only:")
+	assert.Contains(t, out, "local-only")
+	assert.Contains(t, out, "Overrides:")
+	assert.Contains(t, out, "shared")
+	assert.Contains(t, out, "inst-shared")
+	assert.Contains(t, out, "Effective config summary:")
 }

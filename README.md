@@ -96,8 +96,10 @@ When both exist, they are merged:
 
 - **Registries**: combined by name; project overrides global for same name
 - **Skills**: combined by name; project overrides global for same name
+- **Instructions**: combined by name; project overrides global for same name
+- **Agents**: combined by name; project overrides global for same name
 - **Targets**: project targets override global entirely
-- **Instructions**: concatenated (global first, then project)
+- **Paths**: relative `path` entries are resolved from the manifest they came from
 
 The global config path respects `$XDG_CONFIG_HOME` if set.
 
@@ -162,7 +164,10 @@ Add `ref: latest` to preserve the previous behavior.
 | `positive-vibes apply --force`   | Overwrite existing skills                        |
 | `positive-vibes apply --link`    | Use symlinks instead of copies                   |
 | `positive-vibes apply --refresh` | Pull latest from git registries before applying  |
+| `positive-vibes apply --global`  | Apply only global config into current project targets |
 | `positive-vibes config show`     | Show merged config with source annotations       |
+| `positive-vibes config show --sources --relative-paths` | Show source-annotated paths relative to each config root |
+| `positive-vibes config diff`     | Show global-only, local-only, overrides, and effective summary |
 | `positive-vibes config validate` | Validate manifest and check for issues           |
 | `positive-vibes generate <desc>` | Generate a custom skill from a description       |
 

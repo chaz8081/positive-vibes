@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
@@ -68,7 +69,36 @@ func renderMergedYAML(m *manifest.Manifest) string {
 // annotateManifest renders the merged manifest with [global]/[local] source annotations.
 // Either global or local may be nil (but not both).
 func annotateManifest(global, local, merged *manifest.Manifest) string {
+	return annotateManifestWithOptions(global, local, merged, annotateRenderOptions{})
+}
+
+type annotateRenderOptions struct {
+	RelativePaths bool
+	ProjectDir    string
+	GlobalPath    string
+}
+
+func pathForDisplay(path string, root string, relative bool) string {
+	if path == "" || !relative || root == "" || !filepath.IsAbs(path) {
+		return path
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return path
+	}
+	if rel == "." {
+		return "./"
+	}
+	if strings.HasPrefix(rel, "..") {
+		return path
+	}
+	return "./" + filepath.ToSlash(rel)
+}
+
+func annotateManifestWithOptions(global, local, merged *manifest.Manifest, opts annotateRenderOptions) string {
 	var b strings.Builder
+	globalRoot := filepath.Dir(opts.GlobalPath)
+	localRoot := opts.ProjectDir
 
 	// Build lookup sets for skills
 	globalSkills := make(map[string]bool)
@@ -142,8 +172,13 @@ func annotateManifest(global, local, merged *manifest.Manifest) string {
 		for _, s := range merged.Skills {
 			tag := sourceTag(globalSkills[s.Name], localSkills[s.Name])
 			if s.Path != "" {
+				pathRoot := globalRoot
+				if localSkills[s.Name] {
+					pathRoot = localRoot
+				}
+				displayPath := pathForDisplay(s.Path, pathRoot, opts.RelativePaths)
 				b.WriteString(fmt.Sprintf("  - name: %s  %s\n", s.Name, tag))
-				b.WriteString(fmt.Sprintf("    path: %s\n", s.Path))
+				b.WriteString(fmt.Sprintf("    path: %s\n", displayPath))
 			} else {
 				b.WriteString(fmt.Sprintf("  - name: %s  %s\n", s.Name, tag))
 			}
@@ -173,7 +208,12 @@ func annotateManifest(global, local, merged *manifest.Manifest) string {
 			if inst.Content != "" {
 				b.WriteString(fmt.Sprintf("    content: %q\n", inst.Content))
 			} else if inst.Path != "" {
-				b.WriteString(fmt.Sprintf("    path: %s\n", inst.Path))
+				pathRoot := globalRoot
+				if localInstructions[inst.Name] {
+					pathRoot = localRoot
+				}
+				displayPath := pathForDisplay(inst.Path, pathRoot, opts.RelativePaths)
+				b.WriteString(fmt.Sprintf("    path: %s\n", displayPath))
 			}
 			if inst.ApplyTo != "" {
 				b.WriteString(fmt.Sprintf("    apply_to: %q\n", inst.ApplyTo))
@@ -188,7 +228,12 @@ func annotateManifest(global, local, merged *manifest.Manifest) string {
 			tag := sourceTag(globalAgents[a.Name], localAgents[a.Name])
 			b.WriteString(fmt.Sprintf("  - name: %s  %s\n", a.Name, tag))
 			if a.Path != "" {
-				b.WriteString(fmt.Sprintf("    path: %s\n", a.Path))
+				pathRoot := globalRoot
+				if localAgents[a.Name] {
+					pathRoot = localRoot
+				}
+				displayPath := pathForDisplay(a.Path, pathRoot, opts.RelativePaths)
+				b.WriteString(fmt.Sprintf("    path: %s\n", displayPath))
 			} else if a.Registry != "" {
 				b.WriteString(fmt.Sprintf("    registry: %s\n", a.Registry))
 			}
@@ -223,6 +268,7 @@ type configProblem struct {
 // configValidationResult holds the results of a config validation run.
 type configValidationResult struct {
 	problems []configProblem
+	warnings []configProblem
 }
 
 func (r *configValidationResult) ok() bool {
@@ -233,20 +279,29 @@ func (r *configValidationResult) add(field, message string) {
 	r.problems = append(r.problems, configProblem{field: field, message: message})
 }
 
+func (r *configValidationResult) warn(field, message string) {
+	r.warnings = append(r.warnings, configProblem{field: field, message: message})
+}
+
 // validateConfig runs offline checks on a merged manifest.
 // embeddedSkills is the list of skill names available in the embedded registry.
 // hasLocalConfig indicates whether a local project config was found; when false
 // (global-only), empty skills/targets are not flagged as problems since a global
 // config is just a base layer.
 func validateConfig(m *manifest.Manifest, embeddedSkills []string, hasLocalConfig ...bool) *configValidationResult {
+	hasLocal := true
+	if len(hasLocalConfig) > 0 {
+		hasLocal = hasLocalConfig[0]
+	}
+	return validateConfigWithContext(m, embeddedSkills, hasLocal, nil, nil)
+}
+
+func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, hasLocalConfig bool, global, local *manifest.Manifest) *configValidationResult {
 	result := &configValidationResult{}
 
 	// Determine if we should require skills/targets.
 	// Default to true (backwards-compatible with existing callers).
-	requireSkillsAndTargets := true
-	if len(hasLocalConfig) > 0 {
-		requireSkillsAndTargets = hasLocalConfig[0]
-	}
+	requireSkillsAndTargets := hasLocalConfig
 
 	// Check resource/target presence (only when local config is present)
 	if requireSkillsAndTargets {
@@ -304,12 +359,128 @@ func validateConfig(m *manifest.Manifest, embeddedSkills []string, hasLocalConfi
 		}
 	}
 
+	if global != nil && local != nil {
+		d := manifest.ComputeOverrideDiagnostics(global, local)
+		for _, name := range d.Skills {
+			result.warn(name, "local skill overrides global skill with same name")
+		}
+		for _, name := range d.Instructions {
+			result.warn(name, "local instruction overrides global instruction with same name")
+		}
+		for _, name := range d.Agents {
+			result.warn(name, "local agent overrides global agent with same name")
+		}
+	}
+
 	return result
+}
+
+func namesFromSkills(items []manifest.SkillRef) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, it := range items {
+		m[it.Name] = true
+	}
+	return m
+}
+
+func namesFromInstructions(items []manifest.InstructionRef) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, it := range items {
+		m[it.Name] = true
+	}
+	return m
+}
+
+func namesFromAgents(items []manifest.AgentRef) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, it := range items {
+		m[it.Name] = true
+	}
+	return m
+}
+
+func setDiff(a, b map[string]bool) []string {
+	var out []string
+	for name := range a {
+		if !b[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func formatConfigDiff(global, local, merged *manifest.Manifest) string {
+	if global == nil {
+		global = &manifest.Manifest{}
+	}
+	if local == nil {
+		local = &manifest.Manifest{}
+	}
+	if merged == nil {
+		merged = &manifest.Manifest{}
+	}
+
+	globalSkills := namesFromSkills(global.Skills)
+	localSkills := namesFromSkills(local.Skills)
+	globalInst := namesFromInstructions(global.Instructions)
+	localInst := namesFromInstructions(local.Instructions)
+	globalAgents := namesFromAgents(global.Agents)
+	localAgents := namesFromAgents(local.Agents)
+
+	d := manifest.ComputeOverrideDiagnostics(global, local)
+	var b strings.Builder
+
+	b.WriteString("Global-only:\n")
+	if items := setDiff(globalSkills, localSkills); len(items) > 0 {
+		b.WriteString("  skills: " + strings.Join(items, ", ") + "\n")
+	}
+	if items := setDiff(globalInst, localInst); len(items) > 0 {
+		b.WriteString("  instructions: " + strings.Join(items, ", ") + "\n")
+	}
+	if items := setDiff(globalAgents, localAgents); len(items) > 0 {
+		b.WriteString("  agents: " + strings.Join(items, ", ") + "\n")
+	}
+
+	b.WriteString("\nLocal-only:\n")
+	if items := setDiff(localSkills, globalSkills); len(items) > 0 {
+		b.WriteString("  skills: " + strings.Join(items, ", ") + "\n")
+	}
+	if items := setDiff(localInst, globalInst); len(items) > 0 {
+		b.WriteString("  instructions: " + strings.Join(items, ", ") + "\n")
+	}
+	if items := setDiff(localAgents, globalAgents); len(items) > 0 {
+		b.WriteString("  agents: " + strings.Join(items, ", ") + "\n")
+	}
+
+	b.WriteString("\nOverrides:\n")
+	if len(d.Skills) > 0 {
+		b.WriteString("  skills: " + strings.Join(d.Skills, ", ") + "\n")
+	}
+	if len(d.Instructions) > 0 {
+		b.WriteString("  instructions: " + strings.Join(d.Instructions, ", ") + "\n")
+	}
+	if len(d.Agents) > 0 {
+		b.WriteString("  agents: " + strings.Join(d.Agents, ", ") + "\n")
+	}
+	if len(d.Registries) > 0 {
+		b.WriteString("  registries: " + strings.Join(d.Registries, ", ") + "\n")
+	}
+
+	b.WriteString("\nEffective config summary:\n")
+	b.WriteString(fmt.Sprintf("  registries: %d\n", len(merged.Registries)))
+	b.WriteString(fmt.Sprintf("  skills: %d\n", len(merged.Skills)))
+	b.WriteString(fmt.Sprintf("  instructions: %d\n", len(merged.Instructions)))
+	b.WriteString(fmt.Sprintf("  agents: %d\n", len(merged.Agents)))
+	b.WriteString(fmt.Sprintf("  targets: %d\n", len(merged.Targets)))
+
+	return b.String()
 }
 
 // --- Cobra commands ---
 
 var configShowSources bool
+var configShowRelativePaths bool
 
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -320,6 +491,7 @@ or validate your setup for problems.
 Subcommands:
   show       Print the effective merged config as YAML
   paths      Show resolved config file locations
+  diff       Show differences between global/local/effective config
   validate   Check config for problems (offline)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		_ = cmd.Help()
@@ -359,7 +531,11 @@ Use --sources to annotate each value with [global], [local], or
 				fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Print(annotateManifest(global, local, merged))
+			fmt.Print(annotateManifestWithOptions(global, local, merged, annotateRenderOptions{
+				RelativePaths: configShowRelativePaths,
+				ProjectDir:    project,
+				GlobalPath:    globalPath,
+			}))
 		} else {
 			merged, err := manifest.LoadMergedManifest(project, globalPath)
 			if err != nil {
@@ -380,6 +556,33 @@ var configPathsCmd = &cobra.Command{
 		home, _ := os.UserHomeDir()
 		cacheDir := filepath.Join(home, ".positive-vibes", "cache")
 		fmt.Print(formatPaths(globalPath, project, cacheDir))
+	},
+}
+
+var configDiffCmd = &cobra.Command{
+	Use:   "diff",
+	Short: "Show global, local, and effective config differences",
+	Run: func(cmd *cobra.Command, args []string) {
+		project := ProjectDir()
+		globalPath := defaultGlobalManifestPath()
+
+		var global, local *manifest.Manifest
+		if data, err := os.ReadFile(globalPath); err == nil {
+			if g, err := manifest.LoadManifestFromBytes(data); err == nil {
+				global = g
+			}
+		}
+		if p, _, err := manifest.LoadManifestFromProject(project); err == nil {
+			local = p
+		}
+
+		merged, err := manifest.LoadMergedManifest(project, globalPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "No config found (checked %s and %s)\n", globalPath, project)
+			os.Exit(1)
+		}
+
+		fmt.Print(formatConfigDiff(global, local, merged))
 	},
 }
 
@@ -425,13 +628,21 @@ Exits with code 1 if any problems are found.`,
 			os.Exit(1)
 		}
 
+		var globalM, localM *manifest.Manifest
+		if data, err := os.ReadFile(globalPath); err == nil {
+			globalM, _ = manifest.LoadManifestFromBytes(data)
+		}
+		if m, _, err := manifest.LoadManifestFromProject(project); err == nil {
+			localM = m
+		}
+
 		// Get embedded skill names
 		embedded := registry.NewEmbeddedRegistry()
 		embeddedSkills, _ := embedded.List()
 
 		// Run validation -- pass whether local config was found
 		hasLocal := localStatus == "ok"
-		result := validateConfig(merged, embeddedSkills, hasLocal)
+		result := validateConfigWithContext(merged, embeddedSkills, hasLocal, globalM, localM)
 
 		// Print registries
 		fmt.Fprintf(os.Stdout, "Registries (%d):\n", len(merged.Registries))
@@ -470,6 +681,14 @@ Exits with code 1 if any problems are found.`,
 		}
 		fmt.Println()
 
+		if len(result.warnings) > 0 {
+			fmt.Println("Warnings:")
+			for _, w := range result.warnings {
+				fmt.Fprintf(os.Stdout, "  WARN  %s  %s\n", w.field, w.message)
+			}
+			fmt.Println()
+		}
+
 		if result.ok() {
 			if !hasLocal {
 				fmt.Println("No local vibes detected. Run 'positive-vibes init' to spread some good vibes here.")
@@ -485,8 +704,10 @@ Exits with code 1 if any problems are found.`,
 
 func init() {
 	configShowCmd.Flags().BoolVar(&configShowSources, "sources", false, "annotate values with their source (global/local)")
+	configShowCmd.Flags().BoolVar(&configShowRelativePaths, "relative-paths", false, "show source-annotated paths relative to their config root")
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configPathsCmd)
+	configCmd.AddCommand(configDiffCmd)
 	configCmd.AddCommand(configValidateCmd)
 	rootCmd.AddCommand(configCmd)
 }

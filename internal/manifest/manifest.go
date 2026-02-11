@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -22,6 +23,66 @@ type Manifest struct {
 	Instructions []InstructionRef `yaml:"instructions,omitempty"`
 	Agents       []AgentRef       `yaml:"agents,omitempty"`
 	Targets      []string         `yaml:"targets"`
+}
+
+// OverrideDiagnostics describes names where local config overrides global config.
+type OverrideDiagnostics struct {
+	Registries   []string
+	Skills       []string
+	Instructions []string
+	Agents       []string
+}
+
+// ComputeOverrideDiagnostics returns resource names defined in both global and local manifests.
+func ComputeOverrideDiagnostics(global, local *Manifest) OverrideDiagnostics {
+	if global == nil || local == nil {
+		return OverrideDiagnostics{}
+	}
+
+	globalRegs := make(map[string]bool)
+	for _, r := range global.Registries {
+		globalRegs[r.Name] = true
+	}
+	globalSkills := make(map[string]bool)
+	for _, s := range global.Skills {
+		globalSkills[s.Name] = true
+	}
+	globalInst := make(map[string]bool)
+	for _, i := range global.Instructions {
+		globalInst[i.Name] = true
+	}
+	globalAgents := make(map[string]bool)
+	for _, a := range global.Agents {
+		globalAgents[a.Name] = true
+	}
+
+	d := OverrideDiagnostics{}
+	for _, r := range local.Registries {
+		if globalRegs[r.Name] {
+			d.Registries = append(d.Registries, r.Name)
+		}
+	}
+	for _, s := range local.Skills {
+		if globalSkills[s.Name] {
+			d.Skills = append(d.Skills, s.Name)
+		}
+	}
+	for _, i := range local.Instructions {
+		if globalInst[i.Name] {
+			d.Instructions = append(d.Instructions, i.Name)
+		}
+	}
+	for _, a := range local.Agents {
+		if globalAgents[a.Name] {
+			d.Agents = append(d.Agents, a.Name)
+		}
+	}
+
+	sort.Strings(d.Registries)
+	sort.Strings(d.Skills)
+	sort.Strings(d.Instructions)
+	sort.Strings(d.Agents)
+	return d
 }
 
 // SkillRef is a reference to a skill in the manifest.
