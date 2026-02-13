@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
@@ -674,7 +675,8 @@ skills:
 - name: conventional-commits
 agents:
 - name: code-reviewer
-  registry: "test-remote/my-skill:agents/code-reviewer.md"
+  registry: test-remote
+  path: my-skill/agents/code-reviewer.md
 `
 	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -741,7 +743,8 @@ skills:
 - name: conventional-commits
 agents:
 - name: helper
-  registry: "test-remote/my-skill:agents/helper.md"
+  registry: test-remote
+  path: my-skill/agents/helper.md
 `
 	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -771,16 +774,15 @@ agents:
 	}
 }
 
-func TestApplierApply_AgentFromRegistry_InvalidFormat(t *testing.T) {
+func TestApplierApply_AgentFromRegistry_MissingPath(t *testing.T) {
 	tmp := t.TempDir()
 	mfile := filepath.Join(tmp, "vibes.yaml")
-	// Registry ref with invalid format (no colon separator)
 	content := `targets: ["opencode"]
 skills:
 - name: conventional-commits
 agents:
 - name: bad-ref
-  registry: "invalid-format-no-colon"
+  registry: test-remote
 `
 	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -790,23 +792,103 @@ agents:
 	a := NewApplier(regs)
 	opts := target.InstallOpts{Force: true}
 	res, err := a.Apply(mfile, opts)
+	if err == nil {
+		t.Fatalf("expected apply error for missing agent path, got nil")
+	}
+	if !strings.Contains(err.Error(), "agent \"bad-ref\": path is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("expected nil result on validation error, got: %+v", res)
+	}
+}
+
+func TestApplierApply_InstructionFromRegistry(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md":                  "---\nname: my-skill\n---\n# My Skill\n",
+		"my-skill/instructions/standards.md": "Use small functions and clear names.",
+	})
+
+	cacheDir := t.TempDir()
+	gitReg := &registry.GitRegistry{
+		RegistryName: "test-remote",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "test-remote"),
+		SkillsPath:   ".",
+	}
+
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: conventional-commits
+instructions:
+- name: standards
+  registry: test-remote
+  path: my-skill/instructions/standards.md
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry(), gitReg}
+	a := NewApplier(regs)
+	res, err := a.Apply(mfile, target.InstallOpts{Force: true})
 	if err != nil {
 		t.Fatalf("apply error: %v", err)
 	}
-
-	// Should have an error op for the bad-ref agent
-	if len(res.Errors) == 0 {
-		t.Fatalf("expected errors for invalid registry format, got none")
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
 	}
 
-	var foundError bool
-	for _, op := range res.Ops {
-		if op.SkillName == "bad-ref" && op.Status == OpError {
-			foundError = true
-		}
+	instFile := filepath.Join(tmp, ".opencode", "instructions", "standards.md")
+	data, err := os.ReadFile(instFile)
+	if err != nil {
+		t.Fatalf("instruction file not found at %s: %v", instFile, err)
 	}
-	if !foundError {
-		t.Fatalf("expected error op for 'bad-ref', got: %+v", res.Ops)
+	if string(data) != "Use small functions and clear names." {
+		t.Fatalf("instruction content mismatch: got %q", string(data))
+	}
+}
+
+func TestApplierApply_SkillFromSpecificRegistryPath(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"custom-skill/SKILL.md": "---\nname: custom-skill\n---\n# Custom Skill\n",
+	})
+
+	cacheDir := t.TempDir()
+	gitReg := &registry.GitRegistry{
+		RegistryName: "test-remote",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "test-remote"),
+		SkillsPath:   ".",
+	}
+
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: alias-name
+  registry: test-remote
+  path: custom-skill
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry(), gitReg}
+	a := NewApplier(regs)
+	res, err := a.Apply(mfile, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	installedSkill := filepath.Join(tmp, ".opencode", "skills", "custom-skill", "SKILL.md")
+	if _, err := os.Stat(installedSkill); err != nil {
+		t.Fatalf("expected skill installed from explicit registry path: %v", err)
 	}
 }
 
@@ -819,7 +901,8 @@ skills:
 - name: conventional-commits
 agents:
 - name: ghost
-  registry: "nonexistent-reg/some-skill:agents/ghost.md"
+  registry: "nonexistent-reg"
+  path: "some-skill/agents/ghost.md"
 `
 	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)

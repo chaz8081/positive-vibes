@@ -790,3 +790,22 @@ func TestValidateConfigWithContext_UnknownSkillWarnsWhenRegistryUnavailable(t *t
 	require.NotEmpty(t, result.warnings)
 	assert.Contains(t, result.warnings[0].message, "could not verify")
 }
+
+func TestValidateConfigWithContext_LocalRegistryDependencyDefinedOnlyGlobally_IsError(t *testing.T) {
+	global := &manifest.Manifest{
+		Registries: []manifest.RegistryRef{{Name: "team", URL: "https://example.com/team", Ref: "latest"}},
+	}
+	local := &manifest.Manifest{
+		Skills: []manifest.SkillRef{{Name: "s", Registry: "team", Path: "skill-a"}},
+	}
+	merged := &manifest.Manifest{
+		Registries: []manifest.RegistryRef{{Name: "team", URL: "https://example.com/team", Ref: "latest"}},
+		Skills:     []manifest.SkillRef{{Name: "s", Registry: "team", Path: "skill-a"}},
+		Targets:    []string{"opencode"},
+	}
+
+	result := validateConfigWithContext(merged, []string{"conventional-commits"}, true, global, local)
+	assert.False(t, result.ok())
+	require.NotEmpty(t, result.problems)
+	assert.Contains(t, result.problems[0].message, "defined only in global config")
+}

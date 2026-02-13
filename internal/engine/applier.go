@@ -87,8 +87,19 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 	for _, s := range m.Skills {
 		var sk *schema.Skill
 		var srcDir string
-		// local override path -- resolve relative to project directory
-		if s.Path != "" {
+
+		if s.Registry != "" {
+			skillPath := s.Path
+			if skillPath == "" {
+				skillPath = s.Name
+			}
+			got, dir, err := a.fetchSkillFromRegistry(s.Registry, skillPath)
+			if err == nil {
+				sk = got
+				srcDir = dir
+			}
+		} else if s.Path != "" {
+			// local override path -- resolve relative to project directory
 			resolvedPath := s.Path
 			if !filepath.IsAbs(resolvedPath) {
 				resolvedPath = filepath.Join(projectDir, resolvedPath)
@@ -164,10 +175,38 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 
 	// iterate instructions
 	for _, inst := range m.Instructions {
-		// Resolve source path relative to project directory
-		sourcePath := inst.Path
-		if sourcePath != "" && !filepath.IsAbs(sourcePath) {
-			sourcePath = filepath.Join(projectDir, sourcePath)
+		sourcePath := ""
+		tempFile := ""
+		if inst.Registry != "" {
+			skillName, relPath, parseErr := splitRegistryFilePath(inst.Path)
+			if parseErr != nil {
+				errMsg := fmt.Sprintf("instruction %s: invalid registry path %q: %v", inst.Name, inst.Path, parseErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
+				continue
+			}
+			data, fetchErr := a.fetchFileFromRegistry(inst.Registry, skillName, relPath)
+			if fetchErr != nil {
+				errMsg := fmt.Sprintf("instruction %s: fetch from registry: %v", inst.Name, fetchErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
+				continue
+			}
+			tmp, tmpErr := writeTempResourceFile(projectDir, "pv-inst-*", data)
+			if tmpErr != nil {
+				errMsg := fmt.Sprintf("instruction %s: create temp file: %v", inst.Name, tmpErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
+				continue
+			}
+			tempFile = tmp
+			sourcePath = tempFile
+		} else {
+			// Resolve source path relative to project directory
+			sourcePath = inst.Path
+			if sourcePath != "" && !filepath.IsAbs(sourcePath) {
+				sourcePath = filepath.Join(projectDir, sourcePath)
+			}
 		}
 
 		for _, t := range targets {
@@ -196,22 +235,25 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				})
 			}
 		}
+		if tempFile != "" {
+			_ = os.Remove(tempFile)
+		}
 	}
 
 	// iterate agents
 	for _, agent := range m.Agents {
 		// Resolve source path: local path or registry fetch
 		sourcePath := agent.Path
-		if sourcePath != "" && !filepath.IsAbs(sourcePath) {
+		if agent.Registry == "" && sourcePath != "" && !filepath.IsAbs(sourcePath) {
 			sourcePath = filepath.Join(projectDir, sourcePath)
 		}
 
 		// If agent.Registry is set, fetch the file from the registry
 		var tempFile string
 		if agent.Registry != "" {
-			regName, skillName, relPath, parseErr := parseRegistryRef(agent.Registry)
+			skillName, relPath, parseErr := splitRegistryFilePath(agent.Path)
 			if parseErr != nil {
-				errMsg := fmt.Sprintf("agent %s: invalid registry ref %q: %v", agent.Name, agent.Registry, parseErr)
+				errMsg := fmt.Sprintf("agent %s: invalid registry path %q: %v", agent.Name, agent.Path, parseErr)
 				res.Errors = append(res.Errors, errMsg)
 				res.Ops = append(res.Ops, ApplyOp{
 					SkillName: agent.Name,
@@ -222,7 +264,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				continue
 			}
 
-			data, fetchErr := a.fetchFileFromRegistry(regName, skillName, relPath)
+			data, fetchErr := a.fetchFileFromRegistry(agent.Registry, skillName, relPath)
 			if fetchErr != nil {
 				errMsg := fmt.Sprintf("agent %s: fetch from registry: %v", agent.Name, fetchErr)
 				res.Errors = append(res.Errors, errMsg)
@@ -235,8 +277,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				continue
 			}
 
-			// Write fetched bytes to a temp file
-			tmp, tmpErr := os.CreateTemp(projectDir, "pv-agent-*")
+			tmp, tmpErr := writeTempResourceFile(projectDir, "pv-agent-*", data)
 			if tmpErr != nil {
 				errMsg := fmt.Sprintf("agent %s: create temp file: %v", agent.Name, tmpErr)
 				res.Errors = append(res.Errors, errMsg)
@@ -248,21 +289,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				})
 				continue
 			}
-			if _, wErr := tmp.Write(data); wErr != nil {
-				tmp.Close()
-				os.Remove(tmp.Name())
-				errMsg := fmt.Sprintf("agent %s: write temp file: %v", agent.Name, wErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName: agent.Name,
-					Kind:      KindAgent,
-					Status:    OpError,
-					Error:     errMsg,
-				})
-				continue
-			}
-			tmp.Close()
-			tempFile = tmp.Name()
+			tempFile = tmp
 			sourcePath = tempFile
 		}
 
@@ -290,38 +317,48 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 
 		// Clean up temp file after installing to all targets
 		if tempFile != "" {
-			os.Remove(tempFile)
+			_ = os.Remove(tempFile)
 		}
 	}
 
 	return res, nil
 }
 
-// parseRegistryRef parses a registry reference string in the format
-// "registryName/skillName:relPath". Returns the three components.
-func parseRegistryRef(ref string) (regName, skillName, relPath string, err error) {
-	// Split on ":" to get "registryName/skillName" and "relPath"
-	colonIdx := strings.Index(ref, ":")
-	if colonIdx < 0 {
-		return "", "", "", fmt.Errorf("expected format 'registryName/skillName:relPath', no ':' found")
+func splitRegistryFilePath(path string) (skillName, relPath string, err error) {
+	slashIdx := strings.Index(path, "/")
+	if slashIdx < 1 || slashIdx == len(path)-1 {
+		return "", "", fmt.Errorf("expected format 'skillName/relative/file.md'")
 	}
-	prefix := ref[:colonIdx]
-	relPath = ref[colonIdx+1:]
-	if relPath == "" {
-		return "", "", "", fmt.Errorf("empty file path after ':'")
-	}
+	skillName = path[:slashIdx]
+	relPath = path[slashIdx+1:]
+	return skillName, relPath, nil
+}
 
-	// Split prefix on "/" to get registryName and skillName
-	slashIdx := strings.Index(prefix, "/")
-	if slashIdx < 0 {
-		return "", "", "", fmt.Errorf("expected format 'registryName/skillName:relPath', no '/' found in %q", prefix)
+func writeTempResourceFile(projectDir, pattern string, data []byte) (string, error) {
+	tmp, err := os.CreateTemp(projectDir, pattern)
+	if err != nil {
+		return "", err
 	}
-	regName = prefix[:slashIdx]
-	skillName = prefix[slashIdx+1:]
-	if regName == "" || skillName == "" {
-		return "", "", "", fmt.Errorf("registryName and skillName must be non-empty")
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", err
 	}
-	return regName, skillName, relPath, nil
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", err
+	}
+	return tmp.Name(), nil
+}
+
+func (a *Applier) fetchSkillFromRegistry(regName, skillName string) (*schema.Skill, string, error) {
+	for _, r := range a.Registries {
+		if r.Name() != regName {
+			continue
+		}
+		return r.Fetch(skillName)
+	}
+	return nil, "", fmt.Errorf("registry %q not found", regName)
 }
 
 // fetchFileFromRegistry looks up a registry by name, asserts it supports

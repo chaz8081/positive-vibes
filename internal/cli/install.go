@@ -152,7 +152,7 @@ func installAgentsRun(names []string) {
 
 	// If no names provided, prompt for agent details interactively
 	if len(names) == 0 {
-		var name, source, value string
+		var name, source, value, regName string
 
 		nameInput := huh.NewInput().
 			Title("Agent name").
@@ -164,7 +164,7 @@ func installAgentsRun(names []string) {
 			Description("Where is the agent definition?").
 			Options(
 				huh.NewOption("Local path (file in this project)", "path"),
-				huh.NewOption("Registry (registry/skill:path format)", "registry"),
+				huh.NewOption("Registry file (registry + path)", "registry"),
 			).
 			Value(&source)
 
@@ -191,7 +191,23 @@ func installAgentsRun(names []string) {
 		if source == "path" {
 			pathPrompt = "Path to agent file (e.g. ./agents/reviewer.md)"
 		} else {
-			pathPrompt = "Registry reference (e.g. awesome-copilot/my-skill:agents/reviewer.md)"
+			pathPrompt = "Registry path (e.g. my-skill/agents/reviewer.md)"
+		}
+
+		if source == "registry" {
+			regInput := huh.NewInput().
+				Title("Registry name").
+				Description("Must match a name in registries.").
+				Value(&regName)
+			regForm := huh.NewForm(huh.NewGroup(regInput))
+			if err := regForm.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return
+			}
+			if regName == "" {
+				fmt.Fprintln(os.Stderr, "error: registry name is required")
+				return
+			}
 		}
 
 		valueInput := huh.NewInput().
@@ -213,7 +229,8 @@ func installAgentsRun(names []string) {
 		if source == "path" {
 			agent.Path = value
 		} else {
-			agent.Registry = value
+			agent.Registry = regName
+			agent.Path = value
 		}
 
 		m.Agents = append(m.Agents, agent)

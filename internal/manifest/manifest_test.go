@@ -31,6 +31,7 @@ instructions:
 agents:
   - name: reviewer
     registry: awesome-copilot
+    path: my-skill/agents/reviewer.md
   - name: local-agent
     path: ./agents/local-agent.md
 
@@ -66,6 +67,7 @@ func TestLoadManifest_Valid(t *testing.T) {
 	assert.Len(t, m.Agents, 2)
 	assert.Equal(t, "reviewer", m.Agents[0].Name)
 	assert.Equal(t, "awesome-copilot", m.Agents[0].Registry)
+	assert.Equal(t, "my-skill/agents/reviewer.md", m.Agents[0].Path)
 	assert.Equal(t, "local-agent", m.Agents[1].Name)
 	assert.Equal(t, "./agents/local-agent.md", m.Agents[1].Path)
 
@@ -118,6 +120,36 @@ func TestValidate_AgentOnly_Valid(t *testing.T) {
 		Targets: []string{"opencode"},
 	}
 	require.NoError(t, m.Validate())
+}
+
+func TestValidate_SkillRegistryRequiresPath(t *testing.T) {
+	m := &Manifest{
+		Skills:  []SkillRef{{Name: "s", Registry: "team"}},
+		Targets: []string{"opencode"},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path is required")
+}
+
+func TestValidate_InstructionRegistryRequiresPath(t *testing.T) {
+	m := &Manifest{
+		Instructions: []InstructionRef{{Name: "i", Registry: "team"}},
+		Targets:      []string{"opencode"},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path is required when registry is set")
+}
+
+func TestValidate_AgentRegistryRequiresPath(t *testing.T) {
+	m := &Manifest{
+		Agents:  []AgentRef{{Name: "a", Registry: "team"}},
+		Targets: []string{"opencode"},
+	}
+	err := m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "path is required")
 }
 
 func TestValidate_InvalidTarget(t *testing.T) {
@@ -723,7 +755,7 @@ func TestValidate_AgentRef_ValidWithRegistry(t *testing.T) {
 	m := &Manifest{
 		Skills:  []SkillRef{{Name: "x"}},
 		Targets: []string{"opencode"},
-		Agents:  []AgentRef{{Name: "agent", Registry: "my-reg"}},
+		Agents:  []AgentRef{{Name: "agent", Registry: "my-reg", Path: "my-skill/agents/reviewer.md"}},
 	}
 	require.NoError(t, m.Validate())
 }
@@ -754,9 +786,7 @@ func TestValidate_AgentRef_PathAndRegistry(t *testing.T) {
 		Targets: []string{"opencode"},
 		Agents:  []AgentRef{{Name: "agent", Path: "./foo.md", Registry: "reg"}},
 	}
-	err := m.Validate()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "path")
+	require.NoError(t, m.Validate())
 }
 
 func TestValidate_AgentRef_NeitherPathNorRegistry(t *testing.T) {

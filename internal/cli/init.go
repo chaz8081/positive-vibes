@@ -101,7 +101,8 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 		b.WriteString("#   - name: code-reviewer\n")
 		b.WriteString("#     path: ./agents/reviewer.md\n")
 		b.WriteString("#   - name: registry-agent\n")
-		b.WriteString("#     registry: awesome-copilot/my-skill:agents/reviewer.md\n")
+		b.WriteString("#     registry: awesome-copilot\n")
+		b.WriteString("#     path: my-skill/agents/reviewer.md\n")
 	}
 	b.WriteString("\n")
 

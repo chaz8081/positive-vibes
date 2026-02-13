@@ -249,16 +249,20 @@ func annotateManifestWithOptions(global, local, merged *manifest.Manifest, opts 
 		b.WriteString("skills:\n")
 		for _, s := range merged.Skills {
 			tag := sourceTag(globalSkills[s.Name], localSkills[s.Name])
+			b.WriteString(fmt.Sprintf("  - name: %s  %s\n", s.Name, tag))
+			if s.Registry != "" {
+				b.WriteString(fmt.Sprintf("    registry: %s\n", s.Registry))
+			}
 			if s.Path != "" {
 				pathRoot := globalRoot
 				if localSkills[s.Name] {
 					pathRoot = localRoot
 				}
+				if s.Registry != "" {
+					pathRoot = ""
+				}
 				displayPath := pathForDisplay(s.Path, pathRoot, opts.RelativePaths)
-				b.WriteString(fmt.Sprintf("  - name: %s  %s\n", s.Name, tag))
 				b.WriteString(fmt.Sprintf("    path: %s\n", displayPath))
-			} else {
-				b.WriteString(fmt.Sprintf("  - name: %s  %s\n", s.Name, tag))
 			}
 		}
 	}
@@ -283,12 +287,18 @@ func annotateManifestWithOptions(global, local, merged *manifest.Manifest, opts 
 		for _, inst := range merged.Instructions {
 			tag := sourceTag(globalInstructions[inst.Name], localInstructions[inst.Name])
 			b.WriteString(fmt.Sprintf("  - name: %s  %s\n", inst.Name, tag))
+			if inst.Registry != "" {
+				b.WriteString(fmt.Sprintf("    registry: %s\n", inst.Registry))
+			}
 			if inst.Content != "" {
 				b.WriteString(fmt.Sprintf("    content: %q\n", inst.Content))
 			} else if inst.Path != "" {
 				pathRoot := globalRoot
 				if localInstructions[inst.Name] {
 					pathRoot = localRoot
+				}
+				if inst.Registry != "" {
+					pathRoot = ""
 				}
 				displayPath := pathForDisplay(inst.Path, pathRoot, opts.RelativePaths)
 				b.WriteString(fmt.Sprintf("    path: %s\n", displayPath))
@@ -305,15 +315,19 @@ func annotateManifestWithOptions(global, local, merged *manifest.Manifest, opts 
 		for _, a := range merged.Agents {
 			tag := sourceTag(globalAgents[a.Name], localAgents[a.Name])
 			b.WriteString(fmt.Sprintf("  - name: %s  %s\n", a.Name, tag))
+			if a.Registry != "" {
+				b.WriteString(fmt.Sprintf("    registry: %s\n", a.Registry))
+			}
 			if a.Path != "" {
 				pathRoot := globalRoot
 				if localAgents[a.Name] {
 					pathRoot = localRoot
 				}
+				if a.Registry != "" {
+					pathRoot = ""
+				}
 				displayPath := pathForDisplay(a.Path, pathRoot, opts.RelativePaths)
 				b.WriteString(fmt.Sprintf("    path: %s\n", displayPath))
-			} else if a.Registry != "" {
-				b.WriteString(fmt.Sprintf("    registry: %s\n", a.Registry))
 			}
 		}
 	}
@@ -409,10 +423,14 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 		embeddedSet[s] = true
 	}
 	for _, s := range m.Skills {
-		if s.Path != "" {
+		if s.Registry == "" && s.Path != "" {
 			// Local path skill: check directory exists
 			if _, err := os.Stat(s.Path); err != nil {
 				result.add(s.Name, "path not found: "+s.Path)
+			}
+		} else if s.Registry != "" {
+			if !registryNameExists(s.Registry, m.Registries) && s.Registry != "embedded" {
+				result.add(s.Name, "registry not found: "+s.Registry)
 			}
 		} else if !embeddedSet[s.Name] {
 			if len(unresolvedRegistries) > 0 {
@@ -425,7 +443,11 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 
 	// Check each instruction with a path
 	for _, inst := range m.Instructions {
-		if inst.Path != "" {
+		if inst.Registry != "" {
+			if !registryNameExists(inst.Registry, m.Registries) {
+				result.add(inst.Name, "registry not found: "+inst.Registry)
+			}
+		} else if inst.Path != "" {
 			if _, err := os.Stat(inst.Path); err != nil {
 				result.add(inst.Name, "path not found: "+inst.Path)
 			}
@@ -434,11 +456,19 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 
 	// Check each agent with a path
 	for _, a := range m.Agents {
-		if a.Path != "" {
+		if a.Registry != "" {
+			if !registryNameExists(a.Registry, m.Registries) {
+				result.add(a.Name, "registry not found: "+a.Registry)
+			}
+		} else if a.Path != "" {
 			if _, err := os.Stat(a.Path); err != nil {
 				result.add(a.Name, "path not found: "+a.Path)
 			}
 		}
+	}
+
+	for _, p := range localGlobalRegistryDependencyProblems(global, local) {
+		result.add(p.field, p.message)
 	}
 
 	if global != nil && local != nil {
@@ -447,7 +477,7 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 			result.warn(name, "local skill switches source type (path vs registry/embedded)")
 		}
 		for _, name := range d.Instructions {
-			result.warn(name, "local instruction switches source type (content vs path)")
+			result.warn(name, "local instruction switches source type (content vs path vs registry)")
 		}
 		for _, name := range d.Agents {
 			result.warn(name, "local agent switches source type (path vs registry)")
@@ -455,6 +485,53 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 	}
 
 	return result
+}
+
+func registryNameExists(name string, regs []manifest.RegistryRef) bool {
+	for _, r := range regs {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func localGlobalRegistryDependencyProblems(global, local *manifest.Manifest) []configProblem {
+	if local == nil {
+		return nil
+	}
+	localRegs := make(map[string]bool)
+	for _, r := range local.Registries {
+		localRegs[r.Name] = true
+	}
+	globalRegs := make(map[string]bool)
+	if global != nil {
+		for _, r := range global.Registries {
+			globalRegs[r.Name] = true
+		}
+	}
+	var out []configProblem
+	appendIfGlobalOnly := func(field, reg, kind string) {
+		if reg == "" || reg == "embedded" {
+			return
+		}
+		if !localRegs[reg] && globalRegs[reg] {
+			out = append(out, configProblem{
+				field:   field,
+				message: fmt.Sprintf("%s references registry %q defined only in global config; add it to project registries for portability", kind, reg),
+			})
+		}
+	}
+	for _, s := range local.Skills {
+		appendIfGlobalOnly(s.Name, s.Registry, "skill")
+	}
+	for _, i := range local.Instructions {
+		appendIfGlobalOnly(i.Name, i.Registry, "instruction")
+	}
+	for _, a := range local.Agents {
+		appendIfGlobalOnly(a.Name, a.Registry, "agent")
+	}
+	return out
 }
 
 func collectAvailableSkillsFromSources(sources []registry.SkillSource) (map[string]bool, []configProblem) {

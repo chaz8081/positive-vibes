@@ -118,24 +118,40 @@ func ComputeRiskyOverrideDiagnostics(global, local *Manifest) RiskyOverrideDiagn
 	r := RiskyOverrideDiagnostics{}
 	for _, s := range local.Skills {
 		if gs, ok := globalSkills[s.Name]; ok {
-			if (gs.Path == "") != (s.Path == "") {
+			globalUsesPath := gs.Path != "" && gs.Registry == ""
+			localUsesPath := s.Path != "" && s.Registry == ""
+			if globalUsesPath != localUsesPath {
 				r.Skills = append(r.Skills, s.Name)
 			}
 		}
 	}
 	for _, i := range local.Instructions {
 		if gi, ok := globalInst[i.Name]; ok {
-			globalUsesPath := gi.Path != ""
-			localUsesPath := i.Path != ""
-			if globalUsesPath != localUsesPath {
+			globalKind := ""
+			if gi.Content != "" {
+				globalKind = "content"
+			} else if gi.Registry != "" {
+				globalKind = "registry"
+			} else if gi.Path != "" {
+				globalKind = "path"
+			}
+			localKind := ""
+			if i.Content != "" {
+				localKind = "content"
+			} else if i.Registry != "" {
+				localKind = "registry"
+			} else if i.Path != "" {
+				localKind = "path"
+			}
+			if globalKind != localKind {
 				r.Instructions = append(r.Instructions, i.Name)
 			}
 		}
 	}
 	for _, a := range local.Agents {
 		if ga, ok := globalAgents[a.Name]; ok {
-			globalUsesPath := ga.Path != ""
-			localUsesPath := a.Path != ""
+			globalUsesPath := ga.Registry == ""
+			localUsesPath := a.Registry == ""
 			if globalUsesPath != localUsesPath {
 				r.Agents = append(r.Agents, a.Name)
 			}
@@ -150,17 +166,19 @@ func ComputeRiskyOverrideDiagnostics(global, local *Manifest) RiskyOverrideDiagn
 
 // SkillRef is a reference to a skill in the manifest.
 type SkillRef struct {
-	Name    string `yaml:"name"`
-	Path    string `yaml:"path,omitempty"`
-	Version string `yaml:"version,omitempty"`
+	Name     string `yaml:"name"`
+	Registry string `yaml:"registry,omitempty"`
+	Path     string `yaml:"path,omitempty"`
+	Version  string `yaml:"version,omitempty"`
 }
 
 // InstructionRef is a reference to an instruction in the manifest.
 type InstructionRef struct {
-	Name    string `yaml:"name"`
-	Content string `yaml:"content,omitempty"`
-	Path    string `yaml:"path,omitempty"`
-	ApplyTo string `yaml:"apply_to,omitempty"`
+	Name     string `yaml:"name"`
+	Registry string `yaml:"registry,omitempty"`
+	Content  string `yaml:"content,omitempty"`
+	Path     string `yaml:"path,omitempty"`
+	ApplyTo  string `yaml:"apply_to,omitempty"`
 }
 
 // AgentRef is a reference to an agent in the manifest.
@@ -237,12 +255,28 @@ func (m *Manifest) Validate() error {
 			return fmt.Errorf("registry %q must specify a ref (use \"latest\" to track the default branch)", r.Name)
 		}
 	}
+	for i, s := range m.Skills {
+		if s.Name == "" {
+			return fmt.Errorf("skill[%d]: name is required", i)
+		}
+		if s.Registry != "" && s.Path == "" {
+			return fmt.Errorf("skill %q: path is required when registry is set", s.Name)
+		}
+	}
 	for i, inst := range m.Instructions {
 		if inst.Name == "" {
 			return fmt.Errorf("instruction[%d]: name is required", i)
 		}
 		if inst.Content != "" && inst.Path != "" {
 			return fmt.Errorf("instruction %q: content and path are mutually exclusive", inst.Name)
+		}
+		if inst.Registry != "" {
+			if inst.Content != "" {
+				return fmt.Errorf("instruction %q: content and registry are mutually exclusive", inst.Name)
+			}
+			if inst.Path == "" {
+				return fmt.Errorf("instruction %q: path is required when registry is set", inst.Name)
+			}
 		}
 		if inst.Content == "" && inst.Path == "" {
 			return fmt.Errorf("instruction %q: one of content or path is required", inst.Name)
@@ -252,11 +286,8 @@ func (m *Manifest) Validate() error {
 		if agent.Name == "" {
 			return fmt.Errorf("agent[%d]: name is required", i)
 		}
-		if agent.Path != "" && agent.Registry != "" {
-			return fmt.Errorf("agent %q: path and registry are mutually exclusive", agent.Name)
-		}
-		if agent.Path == "" && agent.Registry == "" {
-			return fmt.Errorf("agent %q: one of path or registry is required", agent.Name)
+		if agent.Path == "" {
+			return fmt.Errorf("agent %q: path is required", agent.Name)
 		}
 	}
 	return nil
@@ -438,17 +469,17 @@ func ResolveManifestPaths(m *Manifest, baseDir string) {
 		return
 	}
 	for i := range m.Skills {
-		if m.Skills[i].Path != "" && !filepath.IsAbs(m.Skills[i].Path) {
+		if m.Skills[i].Registry == "" && m.Skills[i].Path != "" && !filepath.IsAbs(m.Skills[i].Path) {
 			m.Skills[i].Path = filepath.Join(baseDir, m.Skills[i].Path)
 		}
 	}
 	for i := range m.Instructions {
-		if m.Instructions[i].Path != "" && !filepath.IsAbs(m.Instructions[i].Path) {
+		if m.Instructions[i].Registry == "" && m.Instructions[i].Path != "" && !filepath.IsAbs(m.Instructions[i].Path) {
 			m.Instructions[i].Path = filepath.Join(baseDir, m.Instructions[i].Path)
 		}
 	}
 	for i := range m.Agents {
-		if m.Agents[i].Path != "" && !filepath.IsAbs(m.Agents[i].Path) {
+		if m.Agents[i].Registry == "" && m.Agents[i].Path != "" && !filepath.IsAbs(m.Agents[i].Path) {
 			m.Agents[i].Path = filepath.Join(baseDir, m.Agents[i].Path)
 		}
 	}

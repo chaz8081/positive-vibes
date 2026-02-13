@@ -79,6 +79,8 @@ registries:
 
 skills:
   - name: conventional-commits
+    registry: awesome-copilot
+    path: conventional-commits
   - name: code-review
   - name: my-custom-skill
     path: ./local-skills/my-custom-skill
@@ -88,6 +90,9 @@ instructions:
     content: "Always use TypeScript for frontend code"
   - name: frontend-components
     content: "Prefer functional components"
+  - name: team-standards
+    registry: awesome-copilot
+    path: my-skill/instructions/standards.md
   - name: team-guide
     path: ./instructions/team-guide.md
 
@@ -95,7 +100,8 @@ agents:
   - name: code-reviewer
     path: ./agents/reviewer.md
   - name: registry-reviewer
-    registry: awesome-copilot/my-skill:agents/reviewer.md
+    registry: awesome-copilot
+    path: my-skill/agents/reviewer.md
 
 targets:
   - vscode-copilot
@@ -105,7 +111,11 @@ targets:
 
 Instruction entries are object-based: each item must include `name` and exactly one of `content` or `path`.
 
-Agent entries are object-based: each item must include `name` and exactly one of `path` or `registry`.
+Agent entries are object-based: each item must include `name` and `path`; add `registry` when the path is inside a registry.
+
+Registry-backed resources use `registry: <name>` + `path`. For skills, `path` is a folder inside the registry. For instructions and agents, `path` is a file inside the registry.
+
+`config validate` returns an error when a project resource references a registry that exists only in global config, to keep project manifests portable.
 
 ## Layered Configuration
 
