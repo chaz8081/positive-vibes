@@ -47,6 +47,8 @@ Examples:
 	},
 }
 
+var installResourcesCommandAction = InstallResourcesCommandAction
+
 // InstallResourcesCommandAction applies install mutations for command flows.
 func InstallResourcesCommandAction(projectDir, globalPath, kind string, names []string) (ResourceMutationReport, error) {
 	return InstallResourceItemsWithReport(projectDir, globalPath, kind, names)
@@ -105,17 +107,16 @@ func installSkillsRun(names []string) {
 		names = selected
 	}
 
-	report, err := InstallResourcesCommandAction(project, globalPath, string(ResourceSkills), names)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
-	}
-
+	report, err := installResourcesCommandAction(project, globalPath, string(ResourceSkills), names)
 	for _, name := range report.MutatedNames {
 		fmt.Printf("Added '%s' to %s\n", name, filepath.Base(manifestPath))
 	}
 	for _, name := range report.SkippedDuplicateNames {
 		fmt.Fprintf(os.Stderr, "warning: skill '%s' already exists in manifest, skipping\n", name)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
 	}
 
 	fmt.Println("\nRun 'positive-vibes apply' to install everywhere!")
@@ -267,7 +268,7 @@ func installAgentsRun(names []string) {
 		return
 	}
 
-	report, err := InstallResourcesCommandAction(project, globalPath, string(ResourceAgents), names)
+	report, err := installResourcesCommandAction(project, globalPath, string(ResourceAgents), names)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
@@ -414,7 +415,7 @@ func installInstructionsRun(names []string) {
 		return
 	}
 
-	report, err := InstallResourcesCommandAction(project, globalPath, string(ResourceInstructions), names)
+	report, err := installResourcesCommandAction(project, globalPath, string(ResourceInstructions), names)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return

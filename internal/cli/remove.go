@@ -45,6 +45,8 @@ Examples:
 	},
 }
 
+var removeResourcesCommandAction = RemoveResourcesCommandAction
+
 // RemoveResourcesCommandAction applies remove mutations for command flows.
 func RemoveResourcesCommandAction(projectDir, kind string, names []string) (ResourceMutationReport, error) {
 	return RemoveResourceItemsWithReport(projectDir, kind, names)
@@ -100,16 +102,16 @@ func removeSkillsRun(names []string) {
 		names = selected
 	}
 
-	report, err := RemoveResourcesCommandAction(project, string(ResourceSkills), names)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
-	}
+	report, err := removeResourcesCommandAction(project, string(ResourceSkills), names)
 	for _, name := range report.MutatedNames {
 		fmt.Printf("Removed '%s' from %s\n", name, filepath.Base(manifestPath))
 	}
 	for _, name := range report.SkippedMissingNames {
 		fmt.Fprintf(os.Stderr, "warning: skill not found in manifest: %s\n", name)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
 	}
 }
 
@@ -159,7 +161,7 @@ func removeAgentsRun(names []string) {
 		names = selected
 	}
 
-	report, err := RemoveResourcesCommandAction(project, string(ResourceAgents), names)
+	report, err := removeResourcesCommandAction(project, string(ResourceAgents), names)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
@@ -218,7 +220,7 @@ func removeInstructionsRun(names []string) {
 		names = selected
 	}
 
-	report, err := RemoveResourcesCommandAction(project, string(ResourceInstructions), names)
+	report, err := removeResourcesCommandAction(project, string(ResourceInstructions), names)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
