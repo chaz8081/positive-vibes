@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -18,6 +21,7 @@ type model struct {
 	cursor           int
 	showHelp         bool
 	showInstallModal bool
+	statusMessage    string
 	width            int
 	rows             []ResourceRow
 	items            []string
@@ -60,18 +64,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case tea.KeyMsg:
-		if key.Matches(msg, m.keys.Help) {
-			m.showHelp = true
-			return m, nil
-		}
-
-		if m.showHelp {
-			if key.Matches(msg, m.keys.CloseHelp) {
-				m.showHelp = false
-			}
-			return m, nil
-		}
-
 		if m.showInstallModal {
 			switch {
 			case key.Matches(msg, m.keys.CloseHelp):
@@ -92,7 +84,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if msg.String() == "i" {
+		if key.Matches(msg, m.keys.Help) {
+			m.showHelp = true
+			return m, nil
+		}
+
+		if m.showHelp {
+			if key.Matches(msg, m.keys.CloseHelp) {
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
+		if key.Matches(msg, m.keys.Install) {
 			m.openInstallModal()
 			return m, nil
 		}
@@ -117,7 +121,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) openInstallModal() {
-	m.refreshRowsForActiveRail()
+	if !m.refreshRowsForActiveRail() {
+		m.closeInstallModal()
+		return
+	}
 
 	m.installChoices = m.installChoices[:0]
 	for _, row := range m.rows {
@@ -127,6 +134,7 @@ func (m *model) openInstallModal() {
 	}
 
 	if len(m.installChoices) == 0 {
+		m.statusMessage = fmt.Sprintf("no installable resources in %s", m.activeKind())
 		m.closeInstallModal()
 		return
 	}
@@ -158,22 +166,34 @@ func (m *model) toggleInstallSelection() {
 
 func (m *model) confirmInstallSelection() {
 	selected := m.selectedInstallNames()
-	if len(selected) > 0 && m.installResources != nil {
-		_ = m.installResources(m.activeKind(), selected)
+	if len(selected) == 0 {
+		m.statusMessage = "select at least one resource to install"
+		return
 	}
+
+	if m.installResources != nil {
+		if err := m.installResources(m.activeKind(), selected); err != nil {
+			m.statusMessage = fmt.Sprintf("install failed: %v", err)
+			return
+		}
+	}
+
 	m.refreshRowsForActiveRail()
+	m.statusMessage = fmt.Sprintf("installed: %s", strings.Join(selected, ", "))
 	m.closeInstallModal()
 }
 
-func (m *model) refreshRowsForActiveRail() {
+func (m *model) refreshRowsForActiveRail() bool {
 	if m.listResources == nil {
-		return
+		return true
 	}
 	rows, err := m.listResources(m.activeKind())
 	if err != nil {
-		return
+		m.statusMessage = fmt.Sprintf("list failed: %v", err)
+		return false
 	}
 	m.setRows(rows)
+	return true
 }
 
 func (m *model) setRows(rows []ResourceRow) {

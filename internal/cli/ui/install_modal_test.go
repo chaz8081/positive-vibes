@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -90,5 +93,132 @@ func TestInstallModal_Flow(t *testing.T) {
 	}
 	if installCalls != beforeCancelInstalls {
 		t.Fatalf("expected esc cancel to avoid install, got %d calls", installCalls)
+	}
+}
+
+func TestInstallModal_HelpKeyIgnoredWhileOpen(t *testing.T) {
+	m := newModel()
+	m.listResources = func(kind string) ([]ResourceRow, error) {
+		return []ResourceRow{{Name: "alpha", Installed: false}}, nil
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	if !m.showInstallModal {
+		t.Fatal("expected install modal to open")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	if m.showHelp {
+		t.Fatal("expected help to remain closed while install modal is open")
+	}
+	if !m.showInstallModal {
+		t.Fatal("expected install modal to remain open when ? is pressed")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.showInstallModal {
+		t.Fatal("expected esc to close install modal")
+	}
+	if m.showHelp {
+		t.Fatal("expected help to stay closed after esc")
+	}
+}
+
+func TestInstallModal_ConfirmWithoutSelection(t *testing.T) {
+	var installCalls int
+
+	m := newModel()
+	m.listResources = func(kind string) ([]ResourceRow, error) {
+		return []ResourceRow{{Name: "alpha", Installed: false}}, nil
+	}
+	m.installResources = func(kind string, names []string) error {
+		installCalls++
+		return nil
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !m.showInstallModal {
+		t.Fatal("expected modal to remain open when confirming with no selections")
+	}
+	if installCalls != 0 {
+		t.Fatalf("expected zero install calls, got %d", installCalls)
+	}
+	if !strings.Contains(m.statusMessage, "select at least one") {
+		t.Fatalf("expected status message for empty selection, got %q", m.statusMessage)
+	}
+}
+
+func TestInstallModal_ErrorHandling(t *testing.T) {
+	t.Run("list error", func(t *testing.T) {
+		m := newModel()
+		m.listResources = func(kind string) ([]ResourceRow, error) {
+			return nil, errors.New("list exploded")
+		}
+
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+
+		if m.showInstallModal {
+			t.Fatal("expected modal to stay closed when list fails")
+		}
+		if !strings.Contains(m.statusMessage, "list failed") {
+			t.Fatalf("expected list error status, got %q", m.statusMessage)
+		}
+	})
+
+	t.Run("install error", func(t *testing.T) {
+		m := newModel()
+		m.listResources = func(kind string) ([]ResourceRow, error) {
+			return []ResourceRow{{Name: "alpha", Installed: false}}, nil
+		}
+		m.installResources = func(kind string, names []string) error {
+			return errors.New("install exploded")
+		}
+
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+		if !m.showInstallModal {
+			t.Fatal("expected modal to remain open when install fails")
+		}
+		if !strings.Contains(m.statusMessage, "install failed") {
+			t.Fatalf("expected install error status, got %q", m.statusMessage)
+		}
+	})
+}
+
+func TestInstallModal_NoInstallableResources(t *testing.T) {
+	m := newModel()
+	m.listResources = func(kind string) ([]ResourceRow, error) {
+		return []ResourceRow{{Name: "alpha", Installed: true}}, nil
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+
+	if m.showInstallModal {
+		t.Fatal("expected modal to stay closed when nothing is installable")
+	}
+	if !strings.Contains(m.statusMessage, "no installable resources") {
+		t.Fatalf("expected no-installable-resources status, got %q", m.statusMessage)
+	}
+}
+
+func TestInstallModal_UsesInstallKeyBinding(t *testing.T) {
+	m := newModel()
+	m.keys.Install = key.NewBinding(key.WithKeys("x"))
+	m.listResources = func(kind string) ([]ResourceRow, error) {
+		return []ResourceRow{{Name: "alpha", Installed: false}}, nil
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	if m.showInstallModal {
+		t.Fatal("expected old hardcoded key i to not open modal")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if !m.showInstallModal {
+		t.Fatal("expected configured install key to open modal")
 	}
 }

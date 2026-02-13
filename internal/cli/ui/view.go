@@ -32,7 +32,7 @@ func (m model) View() string {
 	}
 
 	footerWidth := contentWidthForStyle(width, footerStyle)
-	footer := footerStyle.Width(footerWidth).Render("left/right: rail  up/down: move  i: install  ?: help")
+	footer := footerStyle.Width(footerWidth).Render(m.footerText())
 
 	if m.showInstallModal {
 		installWidth := contentWidthForStyle(width, helpStyle)
@@ -139,6 +139,19 @@ func contentWidthForStyle(totalWidth int, style lipgloss.Style) int {
 		return 1
 	}
 	return content
+}
+
+func (m model) footerText() string {
+	installKey := "i"
+	if keys := m.keys.Install.Keys(); len(keys) > 0 {
+		installKey = keys[0]
+	}
+
+	text := "left/right: rail  up/down: move  " + installKey + ": install  ?: help"
+	if m.statusMessage == "" {
+		return text
+	}
+	return text + "  |  " + m.statusMessage
 }
 
 func styleFrameWidth(style lipgloss.Style) int {

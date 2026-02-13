@@ -7,6 +7,7 @@ type keyMap struct {
 	RightRail  key.Binding
 	CursorUp   key.Binding
 	CursorDown key.Binding
+	Install    key.Binding
 	Help       key.Binding
 	CloseHelp  key.Binding
 }
@@ -24,6 +25,9 @@ func defaultKeyMap() keyMap {
 		),
 		CursorDown: key.NewBinding(
 			key.WithKeys("down", "j"),
+		),
+		Install: key.NewBinding(
+			key.WithKeys("i"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
