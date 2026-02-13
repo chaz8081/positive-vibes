@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -68,5 +69,22 @@ func TestShowModal_Flow(t *testing.T) {
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.showDetailModal {
 		t.Fatal("expected show modal to close with esc")
+	}
+}
+
+func TestShowModal_ErrorKeepsModalClosed(t *testing.T) {
+	m := newModel()
+	m.setRows([]ResourceRow{{Name: "alpha", Installed: true}})
+	m.showResource = func(kind, name string) (ResourceDetail, error) {
+		return ResourceDetail{}, errors.New("backend down")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if m.showDetailModal {
+		t.Fatal("expected show modal to stay closed when show callback fails")
+	}
+	if !strings.Contains(m.statusMessage, "show failed") {
+		t.Fatalf("expected show failure status, got %q", m.statusMessage)
 	}
 }

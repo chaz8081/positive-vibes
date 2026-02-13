@@ -78,10 +78,38 @@ func TestNewRuntimeModel_ServiceInitFailureFallsBackGracefully(t *testing.T) {
 	}
 
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
-	if !m.showDetailModal {
-		t.Fatal("expected fallback model to keep show modal functional")
+	if m.showDetailModal {
+		t.Fatal("expected show action to stay closed when backend is unavailable")
 	}
-	if m.showDetail.Name == "" {
-		t.Fatal("expected fallback show modal to render selected placeholder")
+	if !strings.Contains(m.statusMessage, "backend unavailable") {
+		t.Fatalf("expected unavailable backend status for show, got %q", m.statusMessage)
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	if !m.showInstallModal {
+		t.Fatal("expected install modal to open so selection flow can run")
+	}
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !strings.Contains(m.statusMessage, "backend unavailable") {
+		t.Fatalf("expected unavailable backend status for install, got %q", m.statusMessage)
+	}
+	if strings.Contains(m.statusMessage, "installed:") {
+		t.Fatalf("expected degraded install to avoid success status, got %q", m.statusMessage)
+	}
+
+	m.closeInstallModal()
+	m.setRows([]ResourceRow{{Name: "alpha", Installed: true}})
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if !m.showRemoveModal {
+		t.Fatal("expected remove modal to open so selection flow can run")
+	}
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !strings.Contains(m.statusMessage, "backend unavailable") {
+		t.Fatalf("expected unavailable backend status for remove, got %q", m.statusMessage)
+	}
+	if strings.Contains(m.statusMessage, "removed:") {
+		t.Fatalf("expected degraded remove to avoid success status, got %q", m.statusMessage)
 	}
 }

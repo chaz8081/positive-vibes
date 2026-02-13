@@ -169,6 +169,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) openShowModal() {
+	if m.showResource == nil {
+		m.statusMessage = "backend unavailable: show action requires resource service"
+		m.closeShowModal()
+		return
+	}
+
 	if !m.refreshRowsForActiveRail() {
 		m.closeShowModal()
 		return
@@ -187,20 +193,18 @@ func (m *model) openShowModal() {
 		Installed: selected.Installed,
 	}
 
-	if m.showResource != nil {
-		var err error
-		detail, err = m.showResource(m.activeKind(), selected.Name)
-		if err != nil {
-			m.statusMessage = fmt.Sprintf("show failed: %v", err)
-			m.closeShowModal()
-			return
-		}
-		if detail.Kind == "" {
-			detail.Kind = m.activeKind()
-		}
-		if detail.Name == "" {
-			detail.Name = selected.Name
-		}
+	var err error
+	detail, err = m.showResource(m.activeKind(), selected.Name)
+	if err != nil {
+		m.statusMessage = fmt.Sprintf("show failed: %v", err)
+		m.closeShowModal()
+		return
+	}
+	if detail.Kind == "" {
+		detail.Kind = m.activeKind()
+	}
+	if detail.Name == "" {
+		detail.Name = selected.Name
 	}
 
 	m.showDetail = detail
@@ -288,17 +292,20 @@ func (m *model) toggleRemoveSelection() {
 }
 
 func (m *model) confirmRemoveSelection() {
+	if m.removeResources == nil {
+		m.statusMessage = "backend unavailable: remove action requires resource service"
+		return
+	}
+
 	selected := m.selectedRemoveNames()
 	if len(selected) == 0 {
 		m.statusMessage = "select at least one resource to remove"
 		return
 	}
 
-	if m.removeResources != nil {
-		if err := m.removeResources(m.activeKind(), selected); err != nil {
-			m.statusMessage = fmt.Sprintf("remove failed: %v", err)
-			return
-		}
+	if err := m.removeResources(m.activeKind(), selected); err != nil {
+		m.statusMessage = fmt.Sprintf("remove failed: %v", err)
+		return
 	}
 
 	if !m.refreshRowsForActiveRail() {
@@ -324,17 +331,20 @@ func (m *model) toggleInstallSelection() {
 }
 
 func (m *model) confirmInstallSelection() {
+	if m.installResources == nil {
+		m.statusMessage = "backend unavailable: install action requires resource service"
+		return
+	}
+
 	selected := m.selectedInstallNames()
 	if len(selected) == 0 {
 		m.statusMessage = "select at least one resource to install"
 		return
 	}
 
-	if m.installResources != nil {
-		if err := m.installResources(m.activeKind(), selected); err != nil {
-			m.statusMessage = fmt.Sprintf("install failed: %v", err)
-			return
-		}
+	if err := m.installResources(m.activeKind(), selected); err != nil {
+		m.statusMessage = fmt.Sprintf("install failed: %v", err)
+		return
 	}
 
 	if !m.refreshRowsForActiveRail() {

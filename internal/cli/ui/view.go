@@ -56,7 +56,7 @@ func (m model) View() string {
 
 	if m.showHelp {
 		helpWidth := contentWidthForStyle(width, helpStyle)
-		help := helpStyle.Width(helpWidth).Render("Help\n- left/right: switch rail\n- up/down: move cursor\n- esc: close help")
+		help := helpStyle.Width(helpWidth).Render("Help\n- left/right: switch rail\n- up/down: move cursor\n- " + m.closeKeyText() + ": close help")
 		return lipgloss.JoinVertical(lipgloss.Left, body, footer, "", help)
 	}
 
@@ -93,7 +93,7 @@ func (model) renderPreview(width int) string {
 }
 
 func (m model) renderInstallModal(width int) string {
-	lines := []string{"Install resources", "- space: toggle  enter: confirm  esc: cancel", ""}
+	lines := []string{"Install resources", "- space: toggle  enter: confirm  " + m.closeKeyText() + ": cancel", ""}
 	if len(m.installChoices) == 0 {
 		lines = append(lines, mutedStyle.Render("No resources available to install."))
 		return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
@@ -117,7 +117,7 @@ func (m model) renderInstallModal(width int) string {
 }
 
 func (m model) renderRemoveModal(width int) string {
-	lines := []string{"Remove resources", "- space: toggle  enter: confirm  esc: cancel", ""}
+	lines := []string{"Remove resources", "- space: toggle  enter: confirm  " + m.closeKeyText() + ": cancel", ""}
 	if len(m.removeChoices) == 0 {
 		lines = append(lines, mutedStyle.Render("No resources available to remove."))
 		return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
@@ -144,7 +144,7 @@ func (m model) renderShowModal(width int) string {
 	d := m.showDetail
 	lines := []string{
 		"Resource details",
-		"- esc: close",
+		"- " + m.closeKeyText() + ": close",
 		"",
 		"Source metadata",
 		"kind: " + d.Kind,
@@ -237,6 +237,14 @@ func (m model) footerText() string {
 		return text
 	}
 	return text + "  |  " + m.statusMessage
+}
+
+func (m model) closeKeyText() string {
+	closeKey := "esc"
+	if keys := m.keys.CloseHelp.Keys(); len(keys) > 0 {
+		closeKey = keys[0]
+	}
+	return closeKey
 }
 
 func styleFrameWidth(style lipgloss.Style) int {
