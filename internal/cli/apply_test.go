@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,7 +108,7 @@ func TestGlobalApplyNoOpMessage_WhenNoInstallableResources(t *testing.T) {
 	assert.Contains(t, msg, "global config has no installable resources")
 }
 
-func TestRootNoArgs_LaunchesUIOnTTY(t *testing.T) {
+func TestRootNoArgs_TTYLaunchesUISuccessfully(t *testing.T) {
 	originalHelpFn := rootCmd.HelpFunc()
 	originalLaunchUI := launchUI
 	originalIsInteractiveTTY := isInteractiveTTY
@@ -132,8 +133,77 @@ func TestRootNoArgs_LaunchesUIOnTTY(t *testing.T) {
 		helpCalled = true
 	})
 
-	rootCmd.Run(rootCmd, []string{})
+	require.NotNil(t, rootCmd.RunE)
+	err := rootCmd.RunE(rootCmd, []string{})
+	require.NoError(t, err)
 
 	assert.True(t, calledLaunchUI)
+	assert.False(t, helpCalled)
+}
+
+func TestRootNoArgs_NonTTYShowsHelp(t *testing.T) {
+	originalHelpFn := rootCmd.HelpFunc()
+	originalLaunchUI := launchUI
+	originalIsInteractiveTTY := isInteractiveTTY
+	t.Cleanup(func() {
+		rootCmd.SetHelpFunc(originalHelpFn)
+		launchUI = originalLaunchUI
+		isInteractiveTTY = originalIsInteractiveTTY
+	})
+
+	launchCalled := false
+	launchUI = func() error {
+		launchCalled = true
+		return nil
+	}
+
+	isInteractiveTTY = func() bool {
+		return false
+	}
+
+	helpCalled := false
+	rootCmd.SetHelpFunc(func(*cobra.Command, []string) {
+		helpCalled = true
+	})
+
+	require.NotNil(t, rootCmd.RunE)
+	err := rootCmd.RunE(rootCmd, []string{})
+	require.NoError(t, err)
+
+	assert.False(t, launchCalled)
+	assert.True(t, helpCalled)
+}
+
+func TestRootNoArgs_TTYLaunchFailureReturnsError(t *testing.T) {
+	originalHelpFn := rootCmd.HelpFunc()
+	originalLaunchUI := launchUI
+	originalIsInteractiveTTY := isInteractiveTTY
+	t.Cleanup(func() {
+		rootCmd.SetHelpFunc(originalHelpFn)
+		launchUI = originalLaunchUI
+		isInteractiveTTY = originalIsInteractiveTTY
+	})
+
+	launchErr := errors.New("boom")
+	launchCalled := false
+	launchUI = func() error {
+		launchCalled = true
+		return launchErr
+	}
+
+	isInteractiveTTY = func() bool {
+		return true
+	}
+
+	helpCalled := false
+	rootCmd.SetHelpFunc(func(*cobra.Command, []string) {
+		helpCalled = true
+	})
+
+	require.NotNil(t, rootCmd.RunE)
+	err := rootCmd.RunE(rootCmd, []string{})
+	require.ErrorIs(t, err, launchErr)
+
+	assert.True(t, launchCalled)
 	assert.False(t, helpCalled)
 }

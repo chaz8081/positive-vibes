@@ -25,13 +25,11 @@ Manage Agent Skills and Instructions from a single source of truth
   positive-vibes apply   # push local vibes to supported platforms
 `,
 		// Default action launches TUI for interactive terminals and falls back to help otherwise.
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if isInteractiveTTY() {
-				if err := launchUI(); err == nil {
-					return
-				}
+				return launchUI()
 			}
-			_ = cmd.Help()
+			return cmd.Help()
 		},
 	}
 
