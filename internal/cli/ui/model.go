@@ -17,6 +17,7 @@ type model struct {
 	activeRail railTab
 	cursor     int
 	showHelp   bool
+	width      int
 	items      []string
 	keys       keyMap
 }
@@ -26,6 +27,7 @@ func newModel() model {
 		activeRail: railSkills,
 		cursor:     0,
 		showHelp:   false,
+		width:      96,
 		items:      []string{"placeholder-1", "placeholder-2", "placeholder-3"},
 		keys:       defaultKeyMap(),
 	}
@@ -37,6 +39,8 @@ func (model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
 	case tea.KeyMsg:
 		if key.Matches(msg, m.keys.Help) {
 			m.showHelp = true
@@ -52,9 +56,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch {
 		case key.Matches(msg, m.keys.LeftRail):
-			m.activeRail = (m.activeRail + 2) % 3
+			m.activeRail = m.wrapRail(-1)
 		case key.Matches(msg, m.keys.RightRail):
-			m.activeRail = (m.activeRail + 1) % 3
+			m.activeRail = m.wrapRail(1)
 		case key.Matches(msg, m.keys.CursorDown):
 			if m.cursor < len(m.items)-1 {
 				m.cursor++
@@ -71,4 +75,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) railTabs() []string {
 	return []string{"skills", "instructions", "agents"}
+}
+
+func (m model) wrapRail(delta int) railTab {
+	tabCount := len(m.railTabs())
+	if tabCount == 0 {
+		return 0
+	}
+
+	next := (int(m.activeRail) + delta + tabCount) % tabCount
+	return railTab(next)
 }

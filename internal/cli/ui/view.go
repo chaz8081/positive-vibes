@@ -7,21 +7,43 @@ import (
 )
 
 func (m model) View() string {
-	left := m.renderRail()
-	center := m.renderList()
-	right := m.renderPreview()
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
-	footer := footerStyle.Render("left/right: rail  up/down: move  ?: help")
+	width := m.width
+	if width < 1 {
+		width = 96
+	}
+
+	railWidth, listWidth, previewWidth, stacked := m.layoutWidths(width)
+
+	var body string
+	if stacked {
+		body = lipgloss.JoinVertical(
+			lipgloss.Left,
+			m.renderRail(railWidth),
+			m.renderList(listWidth),
+			m.renderPreview(previewWidth),
+		)
+	} else {
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			m.renderRail(railWidth),
+			m.renderList(listWidth),
+			m.renderPreview(previewWidth),
+		)
+	}
+
+	footerWidth := contentWidthForStyle(width, footerStyle)
+	footer := footerStyle.Width(footerWidth).Render("left/right: rail  up/down: move  ?: help")
 
 	if m.showHelp {
-		help := helpStyle.Render("Help\n- left/right: switch rail\n- up/down: move cursor\n- esc: close help")
+		helpWidth := contentWidthForStyle(width, helpStyle)
+		help := helpStyle.Width(helpWidth).Render("Help\n- left/right: switch rail\n- up/down: move cursor\n- esc: close help")
 		return lipgloss.JoinVertical(lipgloss.Left, body, footer, "", help)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
 }
 
-func (m model) renderRail() string {
+func (m model) renderRail(width int) string {
 	tabs := m.railTabs()
 	lines := make([]string, 0, len(tabs))
 	for i, tab := range tabs {
@@ -31,10 +53,10 @@ func (m model) renderRail() string {
 		}
 		lines = append(lines, line)
 	}
-	return panelStyle.Width(20).Render(strings.Join(lines, "\n"))
+	return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
-func (m model) renderList() string {
+func (m model) renderList(width int) string {
 	lines := make([]string, 0, len(m.items))
 	for i, item := range m.items {
 		line := "  " + item
@@ -43,9 +65,52 @@ func (m model) renderList() string {
 		}
 		lines = append(lines, line)
 	}
-	return panelStyle.Width(34).Render(strings.Join(lines, "\n"))
+	return panelStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
-func (model) renderPreview() string {
-	return panelStyle.Width(34).Render(mutedStyle.Render("preview panel"))
+func (model) renderPreview(width int) string {
+	return panelStyle.Width(width).Render(mutedStyle.Render("preview panel"))
+}
+
+func (m model) layoutWidths(totalWidth int) (rail int, list int, preview int, stacked bool) {
+	frame := styleFrameWidth(panelStyle)
+	if totalWidth < (frame*3)+30 {
+		content := totalWidth - frame
+		if content < 1 {
+			content = 1
+		}
+		return content, content, content, true
+	}
+
+	available := totalWidth - (frame * 3)
+	rail = available / 5
+	if rail < 12 {
+		rail = 12
+	}
+
+	remaining := available - rail
+	list = remaining / 2
+	preview = remaining - list
+
+	if list < 10 || preview < 10 {
+		content := totalWidth - frame
+		if content < 1 {
+			content = 1
+		}
+		return content, content, content, true
+	}
+
+	return rail, list, preview, false
+}
+
+func contentWidthForStyle(totalWidth int, style lipgloss.Style) int {
+	content := totalWidth - styleFrameWidth(style)
+	if content < 1 {
+		return 1
+	}
+	return content
+}
+
+func styleFrameWidth(style lipgloss.Style) int {
+	return lipgloss.Width(style.Width(1).Render("x")) - 1
 }
