@@ -178,7 +178,11 @@ func (m *model) confirmInstallSelection() {
 		}
 	}
 
-	m.refreshRowsForActiveRail()
+	if !m.refreshRowsForActiveRail() {
+		m.closeInstallModal()
+		return
+	}
+
 	m.statusMessage = fmt.Sprintf("installed: %s", strings.Join(selected, ", "))
 	m.closeInstallModal()
 }

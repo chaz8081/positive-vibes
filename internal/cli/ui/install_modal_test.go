@@ -187,6 +187,35 @@ func TestInstallModal_ErrorHandling(t *testing.T) {
 			t.Fatalf("expected install error status, got %q", m.statusMessage)
 		}
 	})
+
+	t.Run("refresh error after successful install", func(t *testing.T) {
+		m := newModel()
+		listCalls := 0
+		m.listResources = func(kind string) ([]ResourceRow, error) {
+			listCalls++
+			if listCalls == 1 {
+				return []ResourceRow{{Name: "alpha", Installed: false}}, nil
+			}
+			return nil, errors.New("refresh exploded")
+		}
+		m.installResources = func(kind string, names []string) error {
+			return nil
+		}
+
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+
+		if m.showInstallModal {
+			t.Fatal("expected modal to close after successful install")
+		}
+		if !strings.Contains(m.statusMessage, "list failed") {
+			t.Fatalf("expected refresh error status, got %q", m.statusMessage)
+		}
+		if strings.Contains(m.statusMessage, "installed:") {
+			t.Fatalf("expected refresh error to not be overwritten by success status, got %q", m.statusMessage)
+		}
+	})
 }
 
 func TestInstallModal_NoInstallableResources(t *testing.T) {
