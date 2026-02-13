@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/chaz8081/positive-vibes/pkg/schema"
 	"github.com/spf13/cobra"
 )
 
@@ -29,90 +30,60 @@ Examples:
 		}
 		name := args[1]
 
-		project := ProjectDir()
-		globalPath := defaultGlobalManifestPath()
-		merged, _ := manifest.LoadMergedManifest(project, globalPath)
-
 		switch resType {
 		case ResourceSkills:
-			showSkillRun(name, merged)
+			showSkillRun(name)
 		case ResourceAgents:
-			showAgentRun(name, merged)
+			showAgentRun(name)
 		case ResourceInstructions:
-			showInstructionRun(name, merged)
+			showInstructionRun(name)
 		}
 	},
 }
 
-func showSkillRun(name string, merged *manifest.Manifest) {
-	sources := buildAllSources(merged)
-	skill, regName, err := resolveSkillFromSources(name, sources)
+// ShowResourceCommandAction resolves details for command show flows.
+func ShowResourceCommandAction(projectDir, globalPath, kind, name string) (ResourceDetailResult, error) {
+	return ShowResourceDetail(projectDir, globalPath, kind, name)
+}
+
+func showSkillRun(name string) {
+	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourceSkills), name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-
-	var regURL string
-	if merged != nil {
-		for _, r := range merged.Registries {
-			if r.Name == regName {
-				regURL = r.URL
-				break
-			}
-		}
-	}
-
-	installed := false
-	if merged != nil {
-		for _, s := range merged.Skills {
-			if s.Name == name {
-				installed = true
-				break
-			}
-		}
-	}
-
-	fmt.Print(formatSkillShow(skill, regName, regURL, installed))
-}
-
-func showAgentRun(name string, merged *manifest.Manifest) {
-	if merged == nil {
-		fmt.Fprintln(os.Stderr, "error: no manifest found")
+	skill, ok := detail.Payload.(*schema.Skill)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "error: unexpected skill payload for %s\n", name)
 		return
 	}
-	for _, a := range merged.Agents {
-		if a.Name == name {
-			fmt.Print(formatAgentShow(a, true))
-			return
-		}
-	}
-	for _, ref := range collectRegistryResourceItems(merged, ResourceAgents) {
-		if ref.Name == name {
-			fmt.Print(formatAgentShow(manifest.AgentRef{Name: name, Registry: ref.Registry, Path: ref.Path}, false))
-			return
-		}
-	}
-	fmt.Fprintf(os.Stderr, "error: agent not found: %s\n", name)
+	fmt.Print(formatSkillShow(skill, detail.Registry, detail.RegistryURL, detail.Installed))
 }
 
-func showInstructionRun(name string, merged *manifest.Manifest) {
-	if merged == nil {
-		fmt.Fprintln(os.Stderr, "error: no manifest found")
+func showAgentRun(name string) {
+	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourceAgents), name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	for _, inst := range merged.Instructions {
-		if inst.Name == name {
-			fmt.Print(formatInstructionShow(inst, true))
-			return
-		}
+	agent, ok := detail.Payload.(manifest.AgentRef)
+	if !ok {
+		agent = manifest.AgentRef{Name: detail.Name, Registry: detail.Registry, Path: detail.Path}
 	}
-	for _, ref := range collectRegistryResourceItems(merged, ResourceInstructions) {
-		if ref.Name == name {
-			fmt.Print(formatInstructionShow(manifest.InstructionRef{Name: name, Registry: ref.Registry, Path: ref.Path}, false))
-			return
-		}
+	fmt.Print(formatAgentShow(agent, detail.Installed))
+}
+
+func showInstructionRun(name string) {
+	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourceInstructions), name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
 	}
-	fmt.Fprintf(os.Stderr, "error: instruction not found: %s\n", name)
+	inst, ok := detail.Payload.(manifest.InstructionRef)
+	if !ok {
+		inst = manifest.InstructionRef{Name: detail.Name, Registry: detail.Registry, Path: detail.Path}
+	}
+	fmt.Print(formatInstructionShow(inst, detail.Installed))
 }
 
 func init() {
