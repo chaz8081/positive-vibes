@@ -1,5 +1,7 @@
 # positive-vibes
 
+[![Go](https://github.com/chaz8081/positive-vibes/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/chaz8081/positive-vibes/actions/workflows/go.yml)
+
 > Harmonize your AI tooling. One manifest to rule them all.
 
 positive-vibes is an environment-agnostic configuration manager for AI tooling. It aligns your AI tools -- VS Code Copilot, OpenCode, Cursor, and more -- from a single source of truth.
@@ -51,6 +53,12 @@ To add an instruction entry by name (creates a path-based instruction by convent
 positive-vibes install instructions coding-standards
 ```
 
+To add an agent entry by name (creates a path-based agent by convention):
+
+```bash
+positive-vibes install agents code-reviewer
+```
+
 ### Apply
 
 ```bash
@@ -83,6 +91,12 @@ instructions:
   - name: team-guide
     path: ./instructions/team-guide.md
 
+agents:
+  - name: code-reviewer
+    path: ./agents/reviewer.md
+  - name: registry-reviewer
+    registry: awesome-copilot/my-skill:agents/reviewer.md
+
 targets:
   - vscode-copilot
   - opencode
@@ -91,7 +105,7 @@ targets:
 
 Instruction entries are object-based: each item must include `name` and exactly one of `content` or `path`.
 
-> **Note:** `vibes.yml` is still supported for backwards compatibility. If both `vibes.yaml` and `vibes.yml` exist, `vibes.yaml` takes precedence.
+Agent entries are object-based: each item must include `name` and exactly one of `path` or `registry`.
 
 ## Layered Configuration
 
@@ -157,25 +171,19 @@ registries:
 - **Pinned refs** (branch, tag, or SHA): The registry is cloned once at that ref and cached. Refresh does nothing -- to update, change the `ref` value in your manifest.
 - If a clone fails but a previous cache exists, the cached copy is used as a fallback.
 
-### Migrating existing manifests
-
-If you have a `vibes.yaml` without `ref` on a registry, validation will fail with a helpful message:
-
-```
-registry "awesome-copilot" must specify a ref (use "latest" to track the default branch)
-```
-
-Add `ref: latest` to preserve the previous behavior.
-
 ## Commands
 
 | Command | Description |
 | ------- | ----------- |
 | `positive-vibes init` | Scan project and create `vibes.yaml` |
 | `positive-vibes install <resource-type> [name...]` | Add skills, agents, or instructions to your manifest |
+| `positive-vibes install agents <name>` | Add a path-based agent entry (`./agents/<name>.md`) |
 | `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`) |
+| `positive-vibes list agents` | List configured agents |
 | `positive-vibes show <resource-type> <name>` | Show detailed info for one resource |
+| `positive-vibes show agents <name>` | Show details for a configured agent |
 | `positive-vibes remove <resource-type> [name...]` | Remove resources from your manifest |
+| `positive-vibes remove agents <name>` | Remove one or more agents from your manifest |
 | `positive-vibes apply` | Sync resources to all configured target tool directories |
 | `positive-vibes apply --force` | Overwrite existing installed resources |
 | `positive-vibes apply --link` | Use symlinks instead of copies |
