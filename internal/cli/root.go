@@ -49,6 +49,9 @@ func init() {
 
 // Execute runs the root cobra command
 func Execute() error {
+	if err := configureUIBridge(); err != nil {
+		return err
+	}
 	return rootCmd.Execute()
 }
 
