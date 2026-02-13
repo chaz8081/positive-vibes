@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -104,4 +105,35 @@ func TestGlobalApplyNoOpMessage_WhenNoInstallableResources(t *testing.T) {
 	assert.True(t, skip)
 	assert.Contains(t, msg, "No-op")
 	assert.Contains(t, msg, "global config has no installable resources")
+}
+
+func TestRootNoArgs_LaunchesUIOnTTY(t *testing.T) {
+	originalHelpFn := rootCmd.HelpFunc()
+	originalLaunchUI := launchUI
+	originalIsInteractiveTTY := isInteractiveTTY
+	t.Cleanup(func() {
+		rootCmd.SetHelpFunc(originalHelpFn)
+		launchUI = originalLaunchUI
+		isInteractiveTTY = originalIsInteractiveTTY
+	})
+
+	calledLaunchUI := false
+	launchUI = func() error {
+		calledLaunchUI = true
+		return nil
+	}
+
+	isInteractiveTTY = func() bool {
+		return true
+	}
+
+	helpCalled := false
+	rootCmd.SetHelpFunc(func(*cobra.Command, []string) {
+		helpCalled = true
+	})
+
+	rootCmd.Run(rootCmd, []string{})
+
+	assert.True(t, calledLaunchUI)
+	assert.False(t, helpCalled)
 }

@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/chaz8081/positive-vibes/internal/cli/ui"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -22,14 +24,23 @@ Manage Agent Skills and Instructions from a single source of truth
   positive-vibes init    # create a vibes.yaml
   positive-vibes apply   # push local vibes to supported platforms
 `,
-		// Default action shows help
+		// Default action launches TUI for interactive terminals and falls back to help otherwise.
 		Run: func(cmd *cobra.Command, args []string) {
+			if isInteractiveTTY() {
+				if err := launchUI(); err == nil {
+					return
+				}
+			}
 			_ = cmd.Help()
 		},
 	}
 
-	projectDir string
-	verbose    bool
+	projectDir       string
+	verbose          bool
+	launchUI         = ui.Run
+	isInteractiveTTY = func() bool {
+		return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+	}
 )
 
 func init() {
