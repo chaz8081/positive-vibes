@@ -1,9 +1,13 @@
 package cli
 
-import "github.com/chaz8081/positive-vibes/internal/cli/ui"
+import (
+	"fmt"
+
+	"github.com/chaz8081/positive-vibes/internal/cli/ui"
+)
 
 func init() {
-	ui.ConfigureResourceServiceBridge(ui.ResourceServiceBridge{
+	if err := ui.ConfigureResourceServiceBridge(ui.ResourceServiceBridge{
 		ListAvailableRows: func(projectDir, globalPath, kind string) ([]ui.ResourceRow, error) {
 			items, err := ListAvailableResourceItems(projectDir, globalPath, kind)
 			if err != nil {
@@ -37,7 +41,15 @@ func init() {
 			merged := MergeResourceItems(fromUIRows(available), fromUIRows(installed))
 			return toUIRows(merged)
 		},
-	})
+		InstallResources: func(projectDir, globalPath, kind string, names []string) error {
+			return InstallResourceItems(projectDir, globalPath, kind, names)
+		},
+		RemoveResources: func(projectDir, kind string, names []string) error {
+			return RemoveResourceItems(projectDir, kind, names)
+		},
+	}); err != nil {
+		panic(fmt.Sprintf("configure resource service bridge: %v", err))
+	}
 }
 
 func toUIRows(items []ResourceItem) []ui.ResourceRow {

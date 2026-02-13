@@ -35,6 +35,26 @@ func TestParseResourceType_Invalid(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown resource type")
 }
 
+func TestMergeResourceItems_InstalledWins(t *testing.T) {
+	available := []ResourceItem{
+		{Name: "code-review", Installed: false},
+		{Name: "tdd", Installed: false},
+	}
+	installed := []ResourceItem{
+		{Name: "code-review", Installed: true},
+	}
+
+	merged := MergeResourceItems(available, installed)
+
+	byName := make(map[string]ResourceItem, len(merged))
+	for _, item := range merged {
+		byName[item.Name] = item
+	}
+	assert.Len(t, byName, 2)
+	assert.True(t, byName["code-review"].Installed)
+	assert.False(t, byName["tdd"].Installed)
+}
+
 // --- registrySkillSet tests ---
 
 func TestRegistrySkillSet_FromSources(t *testing.T) {
