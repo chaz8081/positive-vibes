@@ -56,7 +56,7 @@ func (m model) View() string {
 
 	if m.showHelp {
 		helpWidth := contentWidthForStyle(width, helpStyle)
-		help := helpStyle.Width(helpWidth).Render("Help\n- left/right: switch rail\n- up/down: move cursor\n- " + m.closeKeyText() + ": close help")
+		help := helpStyle.Width(helpWidth).Render("Help\n- left/right: switch rail\n- up/down: move cursor\n- " + m.quitKeyText() + ": quit\n- " + m.closeKeyText() + ": close help")
 		return lipgloss.JoinVertical(lipgloss.Left, body, footer, "", help)
 	}
 
@@ -232,7 +232,9 @@ func (m model) footerText() string {
 		removeKey = keys[0]
 	}
 
-	text := "left/right: rail  up/down: move  " + installKey + ": install  " + removeKey + ": remove  ?: help"
+	quitKey := m.quitKeyText()
+
+	text := "left/right: rail  up/down: move  " + installKey + ": install  " + removeKey + ": remove  " + quitKey + ": quit  ?: help"
 	if m.statusMessage == "" {
 		return text
 	}
@@ -245,6 +247,14 @@ func (m model) closeKeyText() string {
 		closeKey = keys[0]
 	}
 	return closeKey
+}
+
+func (m model) quitKeyText() string {
+	quitKey := "q"
+	if keys := m.keys.Quit.Keys(); len(keys) > 0 {
+		quitKey = keys[0]
+	}
+	return quitKey
 }
 
 func styleFrameWidth(style lipgloss.Style) int {

@@ -75,6 +75,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case tea.KeyMsg:
+		if key.Matches(msg, m.keys.Quit) {
+			return m, tea.Quit
+		}
+
 		if m.showDetailModal {
 			if key.Matches(msg, m.keys.CloseHelp) {
 				m.closeShowModal()

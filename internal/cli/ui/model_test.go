@@ -185,6 +185,24 @@ func TestView_ResponsiveLayoutFitsTerminalWidth(t *testing.T) {
 	}
 }
 
+func TestModel_QuitKeyReturnsQuitCmd(t *testing.T) {
+	m := newModel()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("expected quit command for q key")
+	}
+
+	if _, ok := updated.(model); !ok {
+		t.Fatalf("expected updated model type %T, got %T", m, updated)
+	}
+
+	msg := cmd()
+	if _, ok := msg.(tea.QuitMsg); !ok {
+		t.Fatalf("expected tea.QuitMsg, got %T", msg)
+	}
+}
+
 func updateWithKey(t *testing.T, m model, msg tea.KeyMsg) model {
 	t.Helper()
 

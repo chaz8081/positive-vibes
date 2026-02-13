@@ -9,6 +9,7 @@ type keyMap struct {
 	CursorDown key.Binding
 	Install    key.Binding
 	Remove     key.Binding
+	Quit       key.Binding
 	Help       key.Binding
 	CloseHelp  key.Binding
 }
@@ -32,6 +33,9 @@ func defaultKeyMap() keyMap {
 		),
 		Remove: key.NewBinding(
 			key.WithKeys("r"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q", "ctrl+c"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
