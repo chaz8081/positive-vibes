@@ -45,6 +45,32 @@ type ResourceItem struct {
 	Installed bool
 }
 
+// MergeResourceItems merges available and installed resources into a deduplicated
+// list keyed by Name. Installed entries always win for the Installed flag.
+func MergeResourceItems(available, installed []ResourceItem) []ResourceItem {
+	byName := make(map[string]ResourceItem, len(available)+len(installed))
+	for _, item := range available {
+		if item.Name == "" {
+			continue
+		}
+		item.Installed = false
+		byName[item.Name] = item
+	}
+	for _, item := range installed {
+		if item.Name == "" {
+			continue
+		}
+		item.Installed = true
+		byName[item.Name] = item
+	}
+
+	merged := make([]ResourceItem, 0, len(byName))
+	for _, item := range byName {
+		merged = append(merged, item)
+	}
+	return merged
+}
+
 type registryResourceItem struct {
 	Name     string
 	Registry string
