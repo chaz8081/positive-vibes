@@ -1,6 +1,0 @@
-skills:
-    - name: agentic-eval
-    - name: gh-cli
-targets:
-    - vscode-copilot
-    - opencode

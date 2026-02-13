@@ -4,9 +4,9 @@
 
 positive-vibes is an environment-agnostic configuration manager for AI tooling. It aligns your AI tools -- VS Code Copilot, OpenCode, Cursor, and more -- from a single source of truth.
 
-Every AI coding tool has its own way of configuring "skills" or "instructions." You end up maintaining the same context in `.github/skills/`, `.opencode/skills/`, `.cursor/skills/`... separately.
+Every AI coding tool has its own way of configuring resources like skills and instructions. You end up maintaining the same context in `.github/skills/`, `.opencode/skills/`, `.cursor/skills/`... separately.
 
-positive-vibes gives you one `vibes.yaml` to define your skills and instructions, then syncs them everywhere.
+positive-vibes gives you one `vibes.yaml` to define your resources, then syncs them everywhere.
 
 ## Quick Start
 
@@ -42,7 +42,13 @@ This scans your project, detects the language (Go, Node, Python), and creates a 
 ### Add Skills
 
 ```bash
-positive-vibes install conventional-commits
+positive-vibes install skills conventional-commits
+```
+
+To add an instruction entry by name (creates a path-based instruction by convention):
+
+```bash
+positive-vibes install instructions coding-standards
 ```
 
 ### Apply
@@ -51,7 +57,7 @@ positive-vibes install conventional-commits
 positive-vibes apply
 ```
 
-This reads your manifest and installs skills into all your target tools' directories.
+This reads your manifest and installs configured resources (skills, instructions, agents) into your target tools' directories.
 
 ## The Manifest (`vibes.yaml`)
 
@@ -70,14 +76,20 @@ skills:
     path: ./local-skills/my-custom-skill
 
 instructions:
-  - "Always use TypeScript for frontend code"
-  - "Prefer functional components"
+  - name: frontend-typescript
+    content: "Always use TypeScript for frontend code"
+  - name: frontend-components
+    content: "Prefer functional components"
+  - name: team-guide
+    path: ./instructions/team-guide.md
 
 targets:
   - vscode-copilot
   - opencode
   - cursor
 ```
+
+Instruction entries are object-based: each item must include `name` and exactly one of `content` or `path`.
 
 > **Note:** `vibes.yml` is still supported for backwards compatibility. If both `vibes.yaml` and `vibes.yml` exist, `vibes.yaml` takes precedence.
 
@@ -87,8 +99,8 @@ positive-vibes supports a global + project layered config:
 
 | Level       | Location                             | Purpose                                                        |
 | ----------- | ------------------------------------ | -------------------------------------------------------------- |
-| **Global**  | `~/.config/positive-vibes/vibes.yaml` | User-level defaults (personal registries, shared instructions) |
-| **Project** | `./vibes.yaml`                        | Project-specific skills and targets                            |
+| **Global**  | `~/.config/positive-vibes/vibes.yaml` | User-level defaults (personal registries, shared resources) |
+| **Project** | `./vibes.yaml`                        | Project-specific resources and targets                         |
 
 ### Merge behavior
 
@@ -157,21 +169,28 @@ Add `ref: latest` to preserve the previous behavior.
 
 ## Commands
 
-| Command                 | Description                                     |
-| ----------------------- | ----------------------------------------------- |
-| `positive-vibes init`            | Scan project and create `vibes.yaml`             |
-| `positive-vibes install <skill>` | Add a skill to your manifest                     |
-| `positive-vibes apply`           | Sync skills to all target tool directories       |
-| `positive-vibes apply --force`   | Overwrite existing skills                        |
-| `positive-vibes apply --link`    | Use symlinks instead of copies                   |
-| `positive-vibes apply --refresh` | Pull latest from git registries before applying  |
-| `positive-vibes apply --global`  | Apply only global config into current project targets |
-| `positive-vibes config show`     | Show merged config with source annotations       |
+| Command | Description |
+| ------- | ----------- |
+| `positive-vibes init` | Scan project and create `vibes.yaml` |
+| `positive-vibes install <resource-type> [name...]` | Add skills, agents, or instructions to your manifest |
+| `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`) |
+| `positive-vibes show <resource-type> <name>` | Show detailed info for one resource |
+| `positive-vibes remove <resource-type> [name...]` | Remove resources from your manifest |
+| `positive-vibes apply` | Sync resources to all configured target tool directories |
+| `positive-vibes apply --force` | Overwrite existing installed resources |
+| `positive-vibes apply --link` | Use symlinks instead of copies |
+| `positive-vibes apply --refresh` | Pull latest from git registries before applying |
+| `positive-vibes apply --global` | Apply only global config into current project targets |
+| `positive-vibes config paths` | Show resolved config file locations |
+| `positive-vibes config show` | Show merged config |
 | `positive-vibes config show --sources --relative-paths` | Show source-annotated paths relative to each config root |
-| `positive-vibes config diff`     | Show global-only, local-only, overrides, and effective summary |
+| `positive-vibes config diff` | Show global-only, local-only, overrides, and effective summary |
 | `positive-vibes config diff --json` | Emit the same config diff as machine-readable JSON |
-| `positive-vibes config validate` | Validate manifest and check for issues           |
-| `positive-vibes generate <desc>` | Generate a custom skill from a description       |
+| `positive-vibes config validate` | Validate config and check for issues |
+| `positive-vibes config --color always validate` | Control color output for config commands (`auto`, `always`, `never`) |
+| `positive-vibes completion install` | Install shell completion for your current shell |
+| `positive-vibes completion uninstall` | Remove installed shell completion for your current shell |
+| `positive-vibes generate <desc>` | Generate a custom skill from a description |
 
 ## How Skills Work
 
@@ -192,13 +211,15 @@ tags:
 Always use conventional commit format...
 ```
 
-When you run `positive-vibes apply`, each skill gets installed to the right place for each tool:
+When you run `positive-vibes apply`, each configured skill is installed to the right place for each tool:
 
 | Target          | Location                           |
 | --------------- | ---------------------------------- |
 | VS Code Copilot | `.github/skills/<name>/SKILL.md`   |
 | OpenCode        | `.opencode/skills/<name>/SKILL.md` |
 | Cursor          | `.cursor/skills/<name>/SKILL.md`   |
+
+Instructions and agents are also applied when configured, using each target's instruction/agent conventions.
 
 ## Bundled Skills
 
@@ -242,4 +263,4 @@ Contributions welcome:
 
 ## License
 
-MIT
+[MIT License](https://opensource.org/license/mit)
