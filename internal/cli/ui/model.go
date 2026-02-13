@@ -128,7 +128,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'r' {
+		if key.Matches(msg, m.keys.Remove) {
 			m.openRemoveModal()
 			return m, nil
 		}

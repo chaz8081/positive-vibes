@@ -177,7 +177,12 @@ func (m model) footerText() string {
 		installKey = keys[0]
 	}
 
-	text := "left/right: rail  up/down: move  " + installKey + ": install  r: remove  ?: help"
+	removeKey := "r"
+	if keys := m.keys.Remove.Keys(); len(keys) > 0 {
+		removeKey = keys[0]
+	}
+
+	text := "left/right: rail  up/down: move  " + installKey + ": install  " + removeKey + ": remove  ?: help"
 	if m.statusMessage == "" {
 		return text
 	}

@@ -8,6 +8,7 @@ type keyMap struct {
 	CursorUp   key.Binding
 	CursorDown key.Binding
 	Install    key.Binding
+	Remove     key.Binding
 	Help       key.Binding
 	CloseHelp  key.Binding
 }
@@ -28,6 +29,9 @@ func defaultKeyMap() keyMap {
 		),
 		Install: key.NewBinding(
 			key.WithKeys("i"),
+		),
+		Remove: key.NewBinding(
+			key.WithKeys("r"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
