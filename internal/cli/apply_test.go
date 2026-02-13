@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -104,4 +106,112 @@ func TestGlobalApplyNoOpMessage_WhenNoInstallableResources(t *testing.T) {
 	assert.True(t, skip)
 	assert.Contains(t, msg, "No-op")
 	assert.Contains(t, msg, "global config has no installable resources")
+}
+
+func TestRootNoArgs_TTYLaunchesUISuccessfully(t *testing.T) {
+	originalHelpFn := rootCmd.HelpFunc()
+	originalLaunchUI := launchUI
+	originalIsInteractiveTTY := isInteractiveTTY
+	originalProjectDir := projectDir
+	t.Cleanup(func() {
+		rootCmd.SetHelpFunc(originalHelpFn)
+		launchUI = originalLaunchUI
+		isInteractiveTTY = originalIsInteractiveTTY
+		projectDir = originalProjectDir
+	})
+
+	wantProjectDir := t.TempDir()
+	projectDir = wantProjectDir
+
+	calledLaunchUI := false
+	gotProjectDir := ""
+	launchUI = func(projectDir string) error {
+		calledLaunchUI = true
+		gotProjectDir = projectDir
+		return nil
+	}
+
+	isInteractiveTTY = func() bool {
+		return true
+	}
+
+	helpCalled := false
+	rootCmd.SetHelpFunc(func(*cobra.Command, []string) {
+		helpCalled = true
+	})
+
+	require.NotNil(t, rootCmd.RunE)
+	err := rootCmd.RunE(rootCmd, []string{})
+	require.NoError(t, err)
+
+	assert.True(t, calledLaunchUI)
+	assert.Equal(t, wantProjectDir, gotProjectDir)
+	assert.False(t, helpCalled)
+}
+
+func TestRootNoArgs_NonTTYShowsHelp(t *testing.T) {
+	originalHelpFn := rootCmd.HelpFunc()
+	originalLaunchUI := launchUI
+	originalIsInteractiveTTY := isInteractiveTTY
+	t.Cleanup(func() {
+		rootCmd.SetHelpFunc(originalHelpFn)
+		launchUI = originalLaunchUI
+		isInteractiveTTY = originalIsInteractiveTTY
+	})
+
+	launchCalled := false
+	launchUI = func(projectDir string) error {
+		launchCalled = true
+		return nil
+	}
+
+	isInteractiveTTY = func() bool {
+		return false
+	}
+
+	helpCalled := false
+	rootCmd.SetHelpFunc(func(*cobra.Command, []string) {
+		helpCalled = true
+	})
+
+	require.NotNil(t, rootCmd.RunE)
+	err := rootCmd.RunE(rootCmd, []string{})
+	require.NoError(t, err)
+
+	assert.False(t, launchCalled)
+	assert.True(t, helpCalled)
+}
+
+func TestRootNoArgs_TTYLaunchFailureReturnsError(t *testing.T) {
+	originalHelpFn := rootCmd.HelpFunc()
+	originalLaunchUI := launchUI
+	originalIsInteractiveTTY := isInteractiveTTY
+	t.Cleanup(func() {
+		rootCmd.SetHelpFunc(originalHelpFn)
+		launchUI = originalLaunchUI
+		isInteractiveTTY = originalIsInteractiveTTY
+	})
+
+	launchErr := errors.New("boom")
+	launchCalled := false
+	launchUI = func(projectDir string) error {
+		launchCalled = true
+		return launchErr
+	}
+
+	isInteractiveTTY = func() bool {
+		return true
+	}
+
+	helpCalled := false
+	rootCmd.SetHelpFunc(func(*cobra.Command, []string) {
+		helpCalled = true
+	})
+
+	require.NotNil(t, rootCmd.RunE)
+	err := rootCmd.RunE(rootCmd, []string{})
+	require.ErrorIs(t, err, launchErr)
+
+	assert.True(t, launchCalled)
+	assert.False(t, helpCalled)
 }

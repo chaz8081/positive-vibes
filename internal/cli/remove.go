@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
-	"github.com/chaz8081/positive-vibes/internal/engine"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +32,7 @@ Examples:
 			return
 		}
 
-		names := dedup(args[1:])
+		names := args[1:]
 
 		switch resType {
 		case ResourceSkills:
@@ -44,6 +43,13 @@ Examples:
 			removeInstructionsRun(names)
 		}
 	},
+}
+
+var removeResourcesCommandAction = RemoveResourcesCommandAction
+
+// RemoveResourcesCommandAction applies remove mutations for command flows.
+func RemoveResourcesCommandAction(projectDir, kind string, names []string) (ResourceMutationReport, error) {
+	return RemoveResourceItemsWithReport(projectDir, kind, names)
 }
 
 func removeSkillsRun(names []string) {
@@ -96,20 +102,23 @@ func removeSkillsRun(names []string) {
 		names = selected
 	}
 
-	inst := engine.NewInstaller(nil)
-	for _, name := range names {
-		if err := inst.Remove(name, manifestPath); err != nil {
-			fmt.Fprintf(os.Stderr, "error removing '%s': %v\n", name, err)
-			continue
-		}
+	report, err := removeResourcesCommandAction(project, string(ResourceSkills), names)
+	for _, name := range report.MutatedNames {
 		fmt.Printf("Removed '%s' from %s\n", name, filepath.Base(manifestPath))
+	}
+	for _, name := range report.SkippedMissingNames {
+		fmt.Fprintf(os.Stderr, "warning: skill not found in manifest: %s\n", name)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
 	}
 }
 
 func removeAgentsRun(names []string) {
 	project := ProjectDir()
 
-	m, manifestPath, findErr := manifest.LoadManifestFromProject(project)
+	m, _, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
 		fmt.Fprintf(os.Stderr, "error: no manifest found in %s\n", project)
 		return
@@ -152,32 +161,23 @@ func removeAgentsRun(names []string) {
 		names = selected
 	}
 
-	for _, name := range names {
-		found := -1
-		for i, a := range m.Agents {
-			if a.Name == name {
-				found = i
-				break
-			}
-		}
-		if found < 0 {
-			fmt.Fprintf(os.Stderr, "error: agent not found in manifest: %s\n", name)
-			continue
-		}
-		m.Agents = append(m.Agents[:found], m.Agents[found+1:]...)
+	report, err := removeResourcesCommandAction(project, string(ResourceAgents), names)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
+	}
+	for _, name := range report.MutatedNames {
 		fmt.Printf("Removed agent '%s'\n", name)
 	}
-
-	if err := manifest.SaveManifest(m, manifestPath); err != nil {
-		fmt.Fprintf(os.Stderr, "error saving manifest: %v\n", err)
-		return
+	for _, name := range report.SkippedMissingNames {
+		fmt.Fprintf(os.Stderr, "warning: agent not found in manifest: %s\n", name)
 	}
 }
 
 func removeInstructionsRun(names []string) {
 	project := ProjectDir()
 
-	m, manifestPath, findErr := manifest.LoadManifestFromProject(project)
+	m, _, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
 		fmt.Fprintf(os.Stderr, "error: no manifest found in %s\n", project)
 		return
@@ -220,25 +220,16 @@ func removeInstructionsRun(names []string) {
 		names = selected
 	}
 
-	for _, name := range names {
-		found := -1
-		for i, inst := range m.Instructions {
-			if inst.Name == name {
-				found = i
-				break
-			}
-		}
-		if found < 0 {
-			fmt.Fprintf(os.Stderr, "error: instruction not found in manifest: %s\n", name)
-			continue
-		}
-		m.Instructions = append(m.Instructions[:found], m.Instructions[found+1:]...)
+	report, err := removeResourcesCommandAction(project, string(ResourceInstructions), names)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
+	}
+	for _, name := range report.MutatedNames {
 		fmt.Printf("Removed instruction '%s'\n", name)
 	}
-
-	if err := manifest.SaveManifest(m, manifestPath); err != nil {
-		fmt.Fprintf(os.Stderr, "error saving manifest: %v\n", err)
-		return
+	for _, name := range report.SkippedMissingNames {
+		fmt.Fprintf(os.Stderr, "warning: instruction not found in manifest: %s\n", name)
 	}
 }
 

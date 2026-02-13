@@ -6,9 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
-	"github.com/chaz8081/positive-vibes/internal/engine"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
-	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +34,7 @@ Examples:
 			return
 		}
 
-		names := dedup(args[1:])
+		names := args[1:]
 
 		switch resType {
 		case ResourceSkills:
@@ -49,6 +47,13 @@ Examples:
 	},
 }
 
+var installResourcesCommandAction = InstallResourcesCommandAction
+
+// InstallResourcesCommandAction applies install mutations for command flows.
+func InstallResourcesCommandAction(projectDir, globalPath, kind string, names []string) (ResourceMutationReport, error) {
+	return InstallResourceItemsWithReport(projectDir, globalPath, kind, names)
+}
+
 func installSkillsRun(names []string) {
 	project := ProjectDir()
 	globalPath := defaultGlobalManifestPath()
@@ -57,12 +62,6 @@ func installSkillsRun(names []string) {
 	_, manifestPath, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
 		manifestPath = filepath.Join(project, "vibes.yaml")
-	}
-
-	// Build registries
-	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
-	if merged, err := manifest.LoadMergedManifest(project, globalPath); err == nil {
-		regs = append(regs, gitRegistriesFromManifest(merged)...)
 	}
 
 	// If no names provided, show interactive picker
@@ -108,28 +107,16 @@ func installSkillsRun(names []string) {
 		names = selected
 	}
 
-	// Install each skill
-	inst := engine.NewInstaller(regs)
-	for _, name := range names {
-		fmt.Printf("Installing '%s'...\n", name)
-		if err := inst.Install(name, manifestPath); err != nil {
-			fmt.Fprintf(os.Stderr, "  error: %v\n", err)
-			continue
-		}
-
-		// Check what was installed
-		m, err := manifest.LoadManifest(manifestPath)
-		if err != nil {
-			debugf("warning: could not reload manifest after install: %v", err)
-		} else {
-			for _, s := range m.Skills {
-				if s.Name == name && s.Path != "" {
-					fmt.Printf("  Found local skill at %s\n", s.Path)
-					break
-				}
-			}
-		}
-		fmt.Printf("  Added '%s' to %s\n", name, filepath.Base(manifestPath))
+	report, err := installResourcesCommandAction(project, globalPath, string(ResourceSkills), names)
+	for _, name := range report.MutatedNames {
+		fmt.Printf("Added '%s' to %s\n", name, filepath.Base(manifestPath))
+	}
+	for _, name := range report.SkippedDuplicateNames {
+		fmt.Fprintf(os.Stderr, "warning: skill '%s' already exists in manifest, skipping\n", name)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
 	}
 
 	fmt.Println("\nRun 'positive-vibes apply' to install everywhere!")
@@ -281,40 +268,17 @@ func installAgentsRun(names []string) {
 		return
 	}
 
-	// Non-interactive: add named agents from registry when available,
-	// otherwise use local path convention.
-	added := 0
-	for _, name := range names {
-		if existing[name] {
-			fmt.Fprintf(os.Stderr, "warning: agent '%s' already exists in manifest, skipping\n", name)
-			continue
-		}
-
-		agent := manifest.AgentRef{Name: name}
-		if ref, ok := availableByName[name]; ok {
-			agent.Registry = ref.Registry
-			agent.Path = ref.Path
-		} else {
-			agent.Path = fmt.Sprintf("./agents/%s.md", name)
-		}
-		m.Agents = append(m.Agents, agent)
-		existing[name] = true
-		added++
-		if agent.Registry != "" {
-			fmt.Printf("Added agent '%s' (registry: %s, path: %s)\n", name, agent.Registry, agent.Path)
-		} else {
-			fmt.Printf("Added agent '%s' (path: %s)\n", name, agent.Path)
-		}
+	report, err := installResourcesCommandAction(project, globalPath, string(ResourceAgents), names)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
 	}
 
-	if added > 0 {
-		if err := manifest.SaveManifest(m, manifestPath); err != nil {
-			fmt.Fprintf(os.Stderr, "error saving manifest: %v\n", err)
-			return
-		}
-		fmt.Printf("\nSaved %d agent(s) to %s\n", added, filepath.Base(manifestPath))
-		fmt.Println("Run 'positive-vibes apply' to install everywhere!")
+	for _, name := range report.SkippedDuplicateNames {
+		fmt.Fprintf(os.Stderr, "warning: agent '%s' already exists in manifest, skipping\n", name)
 	}
+	fmt.Printf("Saved %d agent(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
+	fmt.Println("Run 'positive-vibes apply' to install everywhere!")
 }
 
 func installInstructionsRun(names []string) {
@@ -451,40 +415,17 @@ func installInstructionsRun(names []string) {
 		return
 	}
 
-	// Non-interactive: add named instructions from registry when available,
-	// otherwise use local path convention.
-	added := 0
-	for _, name := range names {
-		if existing[name] {
-			fmt.Fprintf(os.Stderr, "warning: instruction '%s' already exists in manifest, skipping\n", name)
-			continue
-		}
-
-		inst := manifest.InstructionRef{Name: name}
-		if ref, ok := availableByName[name]; ok {
-			inst.Registry = ref.Registry
-			inst.Path = ref.Path
-		} else {
-			inst.Path = fmt.Sprintf("./instructions/%s.md", name)
-		}
-		m.Instructions = append(m.Instructions, inst)
-		existing[name] = true
-		added++
-		if inst.Registry != "" {
-			fmt.Printf("Added instruction '%s' (registry: %s, path: %s)\n", name, inst.Registry, inst.Path)
-		} else {
-			fmt.Printf("Added instruction '%s' (path: %s)\n", name, inst.Path)
-		}
+	report, err := installResourcesCommandAction(project, globalPath, string(ResourceInstructions), names)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
 	}
 
-	if added > 0 {
-		if err := manifest.SaveManifest(m, manifestPath); err != nil {
-			fmt.Fprintf(os.Stderr, "error saving manifest: %v\n", err)
-			return
-		}
-		fmt.Printf("\nSaved %d instruction(s) to %s\n", added, filepath.Base(manifestPath))
-		fmt.Println("Run 'positive-vibes apply' to install everywhere!")
+	for _, name := range report.SkippedDuplicateNames {
+		fmt.Fprintf(os.Stderr, "warning: instruction '%s' already exists in manifest, skipping\n", name)
 	}
+	fmt.Printf("Saved %d instruction(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
+	fmt.Println("Run 'positive-vibes apply' to install everywhere!")
 }
 
 func init() {

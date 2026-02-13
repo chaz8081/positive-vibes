@@ -202,6 +202,40 @@ registries:
 
 ## Commands
 
+### Interactive mode (no args)
+
+Running `positive-vibes` with no subcommand launches an interactive TUI **only when stdin and stdout are both TTYs**.
+
+- In a terminal session, `positive-vibes` opens the resource browser UI.
+- In non-interactive contexts (CI, redirected input/output, scripts), `positive-vibes` prints help instead of launching the TUI.
+
+This keeps automation predictable while giving humans a fast default experience.
+
+### TUI keybindings
+
+| Key | Action |
+| --- | ------ |
+| `left` / `h` | Move to previous rail (`skills`/`instructions`/`agents`) |
+| `right` / `l` | Move to next rail |
+| `up` / `k` | Move cursor up |
+| `down` / `j` | Move cursor down |
+| `enter` | Open Show modal for the selected resource |
+| `i` | Open Install modal for installable resources |
+| `r` | Open Remove modal for installed resources |
+| `space` | Toggle selection in Install/Remove modal |
+| `?` | Open help overlay |
+| `esc` | Close help/modal (cancel) |
+
+### Modal flows
+
+- **Show**: highlight a resource and press `enter` to view kind, name, install status, path/registry metadata, and payload preview.
+- **Install**: press `i`, move through installable resources, toggle with `space`, confirm with `enter`, cancel with `esc`.
+- **Remove**: press `r`, move through installed resources, toggle with `space`, confirm with `enter`, cancel with `esc`.
+
+### Script-safe classic subcommands
+
+For scripts and CI, use explicit subcommands instead of relying on no-args behavior:
+
 | Command | Description |
 | ------- | ----------- |
 | `positive-vibes init` | Scan project and create `vibes.yaml` |
