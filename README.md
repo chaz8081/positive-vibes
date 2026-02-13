@@ -1,6 +1,8 @@
 # positive-vibes
 
 [![Go](https://github.com/chaz8081/positive-vibes/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/chaz8081/positive-vibes/actions/workflows/go.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
+
 
 > Harmonize your AI tooling. One manifest to rule them all.
 
