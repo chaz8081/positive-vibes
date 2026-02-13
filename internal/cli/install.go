@@ -34,7 +34,7 @@ Examples:
 			return
 		}
 
-		names := dedup(args[1:])
+		names := args[1:]
 
 		switch resType {
 		case ResourceSkills:
@@ -48,8 +48,8 @@ Examples:
 }
 
 // InstallResourcesCommandAction applies install mutations for command flows.
-func InstallResourcesCommandAction(projectDir, globalPath, kind string, names []string) error {
-	return InstallResourceItems(projectDir, globalPath, kind, names)
+func InstallResourcesCommandAction(projectDir, globalPath, kind string, names []string) (ResourceMutationReport, error) {
+	return InstallResourceItemsWithReport(projectDir, globalPath, kind, names)
 }
 
 func installSkillsRun(names []string) {
@@ -105,13 +105,17 @@ func installSkillsRun(names []string) {
 		names = selected
 	}
 
-	if err := InstallResourcesCommandAction(project, globalPath, string(ResourceSkills), names); err != nil {
+	report, err := InstallResourcesCommandAction(project, globalPath, string(ResourceSkills), names)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
-	for _, name := range names {
+	for _, name := range report.MutatedNames {
 		fmt.Printf("Added '%s' to %s\n", name, filepath.Base(manifestPath))
+	}
+	for _, name := range report.SkippedDuplicateNames {
+		fmt.Fprintf(os.Stderr, "warning: skill '%s' already exists in manifest, skipping\n", name)
 	}
 
 	fmt.Println("\nRun 'positive-vibes apply' to install everywhere!")
@@ -263,12 +267,16 @@ func installAgentsRun(names []string) {
 		return
 	}
 
-	if err := InstallResourcesCommandAction(project, globalPath, string(ResourceAgents), names); err != nil {
+	report, err := InstallResourcesCommandAction(project, globalPath, string(ResourceAgents), names)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Saved %d agent(s) to %s\n", len(dedup(names)), filepath.Base(manifestPath))
+	for _, name := range report.SkippedDuplicateNames {
+		fmt.Fprintf(os.Stderr, "warning: agent '%s' already exists in manifest, skipping\n", name)
+	}
+	fmt.Printf("Saved %d agent(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
 	fmt.Println("Run 'positive-vibes apply' to install everywhere!")
 }
 
@@ -406,12 +414,16 @@ func installInstructionsRun(names []string) {
 		return
 	}
 
-	if err := InstallResourcesCommandAction(project, globalPath, string(ResourceInstructions), names); err != nil {
+	report, err := InstallResourcesCommandAction(project, globalPath, string(ResourceInstructions), names)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Saved %d instruction(s) to %s\n", len(dedup(names)), filepath.Base(manifestPath))
+	for _, name := range report.SkippedDuplicateNames {
+		fmt.Fprintf(os.Stderr, "warning: instruction '%s' already exists in manifest, skipping\n", name)
+	}
+	fmt.Printf("Saved %d instruction(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
 	fmt.Println("Run 'positive-vibes apply' to install everywhere!")
 }
 

@@ -32,7 +32,7 @@ Examples:
 			return
 		}
 
-		names := dedup(args[1:])
+		names := args[1:]
 
 		switch resType {
 		case ResourceSkills:
@@ -46,8 +46,8 @@ Examples:
 }
 
 // RemoveResourcesCommandAction applies remove mutations for command flows.
-func RemoveResourcesCommandAction(projectDir, kind string, names []string) error {
-	return RemoveResourceItems(projectDir, kind, names)
+func RemoveResourcesCommandAction(projectDir, kind string, names []string) (ResourceMutationReport, error) {
+	return RemoveResourceItemsWithReport(projectDir, kind, names)
 }
 
 func removeSkillsRun(names []string) {
@@ -100,12 +100,16 @@ func removeSkillsRun(names []string) {
 		names = selected
 	}
 
-	if err := RemoveResourcesCommandAction(project, string(ResourceSkills), names); err != nil {
+	report, err := RemoveResourcesCommandAction(project, string(ResourceSkills), names)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	for _, name := range dedup(names) {
+	for _, name := range report.MutatedNames {
 		fmt.Printf("Removed '%s' from %s\n", name, filepath.Base(manifestPath))
+	}
+	for _, name := range report.SkippedMissingNames {
+		fmt.Fprintf(os.Stderr, "warning: skill not found in manifest: %s\n", name)
 	}
 }
 
@@ -155,12 +159,16 @@ func removeAgentsRun(names []string) {
 		names = selected
 	}
 
-	if err := RemoveResourcesCommandAction(project, string(ResourceAgents), names); err != nil {
+	report, err := RemoveResourcesCommandAction(project, string(ResourceAgents), names)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	for _, name := range dedup(names) {
+	for _, name := range report.MutatedNames {
 		fmt.Printf("Removed agent '%s'\n", name)
+	}
+	for _, name := range report.SkippedMissingNames {
+		fmt.Fprintf(os.Stderr, "warning: agent not found in manifest: %s\n", name)
 	}
 }
 
@@ -210,12 +218,16 @@ func removeInstructionsRun(names []string) {
 		names = selected
 	}
 
-	if err := RemoveResourcesCommandAction(project, string(ResourceInstructions), names); err != nil {
+	report, err := RemoveResourcesCommandAction(project, string(ResourceInstructions), names)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return
 	}
-	for _, name := range dedup(names) {
+	for _, name := range report.MutatedNames {
 		fmt.Printf("Removed instruction '%s'\n", name)
+	}
+	for _, name := range report.SkippedMissingNames {
+		fmt.Fprintf(os.Stderr, "warning: instruction not found in manifest: %s\n", name)
 	}
 }
 

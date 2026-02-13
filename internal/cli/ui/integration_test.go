@@ -21,8 +21,12 @@ func TestInstallParityHook_MatchesServiceMutation(t *testing.T) {
 	writeManifest(t, cliProject, &manifest.Manifest{})
 	writeManifest(t, serviceProject, &manifest.Manifest{})
 
-	if err := cli.InstallResourcesCommandAction(cliProject, globalPath, "agents", []string{"reviewer"}); err != nil {
+	report, err := cli.InstallResourcesCommandAction(cliProject, globalPath, "agents", []string{"reviewer"})
+	if err != nil {
 		t.Fatalf("cli install action error = %v", err)
+	}
+	if !reflect.DeepEqual(report.MutatedNames, []string{"reviewer"}) {
+		t.Fatalf("cli report mutated names = %#v, want %#v", report.MutatedNames, []string{"reviewer"})
 	}
 
 	svc, err := ui.NewServiceWithBridge(serviceProject, parityBridge())
@@ -56,8 +60,12 @@ func TestRemoveParityHook_MatchesServiceMutation(t *testing.T) {
 	writeManifest(t, cliProject, initial)
 	writeManifest(t, serviceProject, initial)
 
-	if err := cli.RemoveResourcesCommandAction(cliProject, "agents", []string{"planner"}); err != nil {
+	report, err := cli.RemoveResourcesCommandAction(cliProject, "agents", []string{"planner"})
+	if err != nil {
 		t.Fatalf("cli remove action error = %v", err)
+	}
+	if !reflect.DeepEqual(report.MutatedNames, []string{"planner"}) {
+		t.Fatalf("cli report mutated names = %#v, want %#v", report.MutatedNames, []string{"planner"})
 	}
 
 	svc, err := ui.NewServiceWithBridge(serviceProject, parityBridge())
@@ -105,6 +113,96 @@ func TestShowParityHook_MatchesServiceDetail(t *testing.T) {
 		cliDetail.Registry != svcDetail.Registry ||
 		cliDetail.Path != svcDetail.Path {
 		t.Fatalf("detail mismatch\ncli: %#v\nsvc: %#v", cliDetail, svcDetail)
+	}
+}
+
+func TestInstallParityHook_InstructionsDuplicateInstallEdge(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	globalPath := filepath.Join(configDir, "positive-vibes", "vibes.yaml")
+
+	initial := &manifest.Manifest{
+		Instructions: []manifest.InstructionRef{{Name: "standards", Path: "./instructions/standards.md"}},
+	}
+
+	cliProject := t.TempDir()
+	serviceProject := t.TempDir()
+	writeManifest(t, cliProject, initial)
+	writeManifest(t, serviceProject, initial)
+
+	report, err := cli.InstallResourcesCommandAction(cliProject, globalPath, "instructions", []string{"standards", "standards", "onboarding"})
+	if err != nil {
+		t.Fatalf("cli install action error = %v", err)
+	}
+	if !reflect.DeepEqual(report.MutatedNames, []string{"onboarding"}) {
+		t.Fatalf("cli report mutated names = %#v, want %#v", report.MutatedNames, []string{"onboarding"})
+	}
+	if !reflect.DeepEqual(report.SkippedDuplicateNames, []string{"standards"}) {
+		t.Fatalf("cli report skipped duplicate names = %#v, want %#v", report.SkippedDuplicateNames, []string{"standards"})
+	}
+
+	svc, err := ui.NewServiceWithBridge(serviceProject, parityBridge())
+	if err != nil {
+		t.Fatalf("NewServiceWithBridge() error = %v", err)
+	}
+	if err := svc.InstallResources("instructions", []string{"standards", "onboarding"}); err != nil {
+		t.Fatalf("service InstallResources() error = %v", err)
+	}
+
+	cliManifest := readManifest(t, cliProject)
+	serviceManifest := readManifest(t, serviceProject)
+	if !reflect.DeepEqual(cliManifest, serviceManifest) {
+		t.Fatalf("manifest mismatch\ncli: %#v\nsvc: %#v", cliManifest, serviceManifest)
+	}
+	if len(cliManifest.Instructions) != 2 ||
+		cliManifest.Instructions[0].Name != "standards" ||
+		cliManifest.Instructions[1].Name != "onboarding" {
+		t.Fatalf("unexpected instructions after duplicate install edge: %#v", cliManifest.Instructions)
+	}
+}
+
+func TestRemoveParityHook_InstructionsNonexistentRemoveEdge(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	initial := &manifest.Manifest{
+		Instructions: []manifest.InstructionRef{
+			{Name: "standards", Path: "./instructions/standards.md"},
+			{Name: "onboarding", Path: "./instructions/onboarding.md"},
+		},
+	}
+
+	cliProject := t.TempDir()
+	serviceProject := t.TempDir()
+	writeManifest(t, cliProject, initial)
+	writeManifest(t, serviceProject, initial)
+
+	report, err := cli.RemoveResourcesCommandAction(cliProject, "instructions", []string{"ghost", "standards"})
+	if err != nil {
+		t.Fatalf("cli remove action error = %v", err)
+	}
+	if !reflect.DeepEqual(report.MutatedNames, []string{"standards"}) {
+		t.Fatalf("cli report mutated names = %#v, want %#v", report.MutatedNames, []string{"standards"})
+	}
+	if !reflect.DeepEqual(report.SkippedMissingNames, []string{"ghost"}) {
+		t.Fatalf("cli report skipped missing names = %#v, want %#v", report.SkippedMissingNames, []string{"ghost"})
+	}
+
+	svc, err := ui.NewServiceWithBridge(serviceProject, parityBridge())
+	if err != nil {
+		t.Fatalf("NewServiceWithBridge() error = %v", err)
+	}
+	if err := svc.RemoveResources("instructions", []string{"ghost", "standards"}); err != nil {
+		t.Fatalf("service RemoveResources() error = %v", err)
+	}
+
+	cliManifest := readManifest(t, cliProject)
+	serviceManifest := readManifest(t, serviceProject)
+	if !reflect.DeepEqual(cliManifest, serviceManifest) {
+		t.Fatalf("manifest mismatch\ncli: %#v\nsvc: %#v", cliManifest, serviceManifest)
+	}
+	if len(cliManifest.Instructions) != 1 || cliManifest.Instructions[0].Name != "onboarding" {
+		t.Fatalf("unexpected instructions after nonexistent remove edge: %#v", cliManifest.Instructions)
 	}
 }
 
