@@ -20,6 +20,7 @@ type model struct {
 	activeRail       railTab
 	cursor           int
 	showHelp         bool
+	showDetailModal  bool
 	showInstallModal bool
 	showRemoveModal  bool
 	statusMessage    string
@@ -27,6 +28,7 @@ type model struct {
 	rows             []ResourceRow
 	items            []string
 	keys             keyMap
+	showDetail       ResourceDetail
 
 	installCursor   int
 	installChoices  []ResourceRow
@@ -36,6 +38,7 @@ type model struct {
 	removeSelected  map[string]bool
 
 	listResources    func(kind string) ([]ResourceRow, error)
+	showResource     func(kind, name string) (ResourceDetail, error)
 	installResources func(kind string, names []string) error
 	removeResources  func(kind string, names []string) error
 }
@@ -51,6 +54,7 @@ func newModel() model {
 		activeRail:       railSkills,
 		cursor:           0,
 		showHelp:         false,
+		showDetailModal:  false,
 		showInstallModal: false,
 		showRemoveModal:  false,
 		width:            96,
@@ -71,6 +75,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case tea.KeyMsg:
+		if m.showDetailModal {
+			if key.Matches(msg, m.keys.CloseHelp) {
+				m.closeShowModal()
+			}
+			return m, nil
+		}
+
 		if m.showRemoveModal {
 			switch {
 			case key.Matches(msg, m.keys.CloseHelp):
@@ -133,6 +144,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if msg.Type == tea.KeyEnter {
+			m.openShowModal()
+			return m, nil
+		}
+
 		switch {
 		case key.Matches(msg, m.keys.LeftRail):
 			m.activeRail = m.wrapRail(-1)
@@ -150,6 +166,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *model) openShowModal() {
+	if !m.refreshRowsForActiveRail() {
+		m.closeShowModal()
+		return
+	}
+
+	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		m.statusMessage = "no resource selected"
+		m.closeShowModal()
+		return
+	}
+
+	selected := m.rows[m.cursor]
+	detail := ResourceDetail{
+		Kind:      m.activeKind(),
+		Name:      selected.Name,
+		Installed: selected.Installed,
+	}
+
+	if m.showResource != nil {
+		var err error
+		detail, err = m.showResource(m.activeKind(), selected.Name)
+		if err != nil {
+			m.statusMessage = fmt.Sprintf("show failed: %v", err)
+			m.closeShowModal()
+			return
+		}
+		if detail.Kind == "" {
+			detail.Kind = m.activeKind()
+		}
+		if detail.Name == "" {
+			detail.Name = selected.Name
+		}
+	}
+
+	m.showDetail = detail
+	m.showDetailModal = true
+}
+
+func (m *model) closeShowModal() {
+	m.showDetailModal = false
+	m.showDetail = ResourceDetail{}
 }
 
 func (m *model) openInstallModal() {

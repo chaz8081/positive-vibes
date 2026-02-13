@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -33,6 +35,12 @@ func (m model) View() string {
 
 	footerWidth := contentWidthForStyle(width, footerStyle)
 	footer := footerStyle.Width(footerWidth).Render(m.footerText())
+
+	if m.showDetailModal {
+		detailWidth := contentWidthForStyle(width, helpStyle)
+		detail := m.renderShowModal(detailWidth)
+		return lipgloss.JoinVertical(lipgloss.Left, body, footer, "", detail)
+	}
 
 	if m.showInstallModal {
 		installWidth := contentWidthForStyle(width, helpStyle)
@@ -130,6 +138,48 @@ func (m model) renderRemoveModal(width int) string {
 	}
 
 	return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
+}
+
+func (m model) renderShowModal(width int) string {
+	d := m.showDetail
+	lines := []string{
+		"Resource details",
+		"- esc: close",
+		"",
+		"Source metadata",
+		"kind: " + d.Kind,
+		"name: " + d.Name,
+		fmt.Sprintf("installed: %t", d.Installed),
+		"",
+		"Path/registry",
+		"path: " + valueOrUnknown(d.Path),
+		"registry: " + valueOrUnknown(d.Registry),
+		"registry url: " + valueOrUnknown(d.RegistryURL),
+		"",
+		"Content preview",
+		renderPayloadPreview(d.Payload),
+	}
+
+	return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
+}
+
+func valueOrUnknown(v string) string {
+	if v == "" {
+		return "(unknown)"
+	}
+	return v
+}
+
+func renderPayloadPreview(payload any) string {
+	if payload == nil {
+		return mutedStyle.Render("(no content)")
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", payload)
+	}
+	return string(data)
 }
 
 func (m model) layoutWidths(totalWidth int) (rail int, list int, preview int, stacked bool) {
