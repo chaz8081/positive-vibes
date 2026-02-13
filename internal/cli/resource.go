@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
@@ -42,6 +43,12 @@ func ParseResourceType(s string) (ResourceType, error) {
 type ResourceItem struct {
 	Name      string
 	Installed bool
+}
+
+type registryResourceItem struct {
+	Name     string
+	Registry string
+	Path     string
 }
 
 // --- Registry-based skill sets (reused from skills.go) ---
@@ -211,7 +218,7 @@ func formatResourceList(resType ResourceType, items []ResourceItem) string {
 			fmt.Fprintf(&b, "  %s\n", item.Name)
 		}
 	}
-	fmt.Fprintf(&b, "\n%d %s configured\n", len(items), resType)
+	fmt.Fprintf(&b, "\n%d installed, %d available\n", installed, len(items))
 	return b.String()
 }
 
@@ -360,7 +367,7 @@ func formatSkillShow(skill *schema.Skill, registryName, registryURL string, inst
 }
 
 // formatAgentShow renders an agent's details.
-func formatAgentShow(agent manifest.AgentRef) string {
+func formatAgentShow(agent manifest.AgentRef, installed bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Name: %s\n", agent.Name)
 	if agent.Path != "" {
@@ -369,21 +376,32 @@ func formatAgentShow(agent manifest.AgentRef) string {
 	if agent.Registry != "" {
 		fmt.Fprintf(&b, "Registry: %s\n", agent.Registry)
 	}
-	b.WriteString("Status: installed\n")
+	if installed {
+		b.WriteString("Status: installed\n")
+	} else {
+		b.WriteString("Status: available\n")
+	}
 	return b.String()
 }
 
 // formatInstructionShow renders an instruction's details.
-func formatInstructionShow(inst manifest.InstructionRef) string {
+func formatInstructionShow(inst manifest.InstructionRef, installed bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Name: %s\n", inst.Name)
 	if inst.Path != "" {
 		fmt.Fprintf(&b, "Path: %s\n", inst.Path)
 	}
+	if inst.Registry != "" {
+		fmt.Fprintf(&b, "Registry: %s\n", inst.Registry)
+	}
 	if inst.ApplyTo != "" {
 		fmt.Fprintf(&b, "ApplyTo: %s\n", inst.ApplyTo)
 	}
-	b.WriteString("Status: installed\n")
+	if installed {
+		b.WriteString("Status: installed\n")
+	} else {
+		b.WriteString("Status: available\n")
+	}
 	if inst.Content != "" {
 		b.WriteString("\n---\n\n")
 		b.WriteString(inst.Content)
@@ -447,6 +465,21 @@ func collectAgents(merged *manifest.Manifest) []ResourceItem {
 	return items
 }
 
+func collectAvailableAgents(merged *manifest.Manifest) []ResourceItem {
+	installed := make(map[string]bool)
+	if merged != nil {
+		for _, a := range merged.Agents {
+			installed[a.Name] = true
+		}
+	}
+	refs := collectRegistryResourceItems(merged, ResourceAgents)
+	var items []ResourceItem
+	for _, ref := range refs {
+		items = append(items, ResourceItem{Name: ref.Name, Installed: installed[ref.Name]})
+	}
+	return items
+}
+
 // collectInstructions returns instructions from the merged manifest.
 func collectInstructions(merged *manifest.Manifest) []ResourceItem {
 	if merged == nil {
@@ -460,6 +493,70 @@ func collectInstructions(merged *manifest.Manifest) []ResourceItem {
 		})
 	}
 	return items
+}
+
+func collectAvailableInstructions(merged *manifest.Manifest) []ResourceItem {
+	installed := make(map[string]bool)
+	if merged != nil {
+		for _, i := range merged.Instructions {
+			installed[i.Name] = true
+		}
+	}
+	refs := collectRegistryResourceItems(merged, ResourceInstructions)
+	var items []ResourceItem
+	for _, ref := range refs {
+		items = append(items, ResourceItem{Name: ref.Name, Installed: installed[ref.Name]})
+	}
+	return items
+}
+
+func collectRegistryResourceItems(merged *manifest.Manifest, resType ResourceType) []registryResourceItem {
+	if merged == nil {
+		return nil
+	}
+	kind := string(resType)
+	seen := make(map[string]bool)
+	var items []registryResourceItem
+	for _, src := range gitRegistriesFromManifest(merged) {
+		fs, ok := src.(registry.ResourceSource)
+		if !ok {
+			continue
+		}
+		files, err := fs.ListResourceFiles(kind)
+		if err != nil {
+			continue
+		}
+		for _, rel := range files {
+			name := resourceNameFromPath(resType, rel)
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			items = append(items, registryResourceItem{Name: name, Registry: src.Name(), Path: rel})
+		}
+	}
+	return items
+}
+
+func resourceNameFromPath(resType ResourceType, relPath string) string {
+	base := filepath.Base(relPath)
+	switch resType {
+	case ResourceInstructions:
+		if !strings.HasSuffix(base, ".instructions.md") {
+			return ""
+		}
+		return strings.TrimSuffix(base, ".instructions.md")
+	case ResourceAgents:
+		if !strings.HasSuffix(base, ".agent.md") {
+			return ""
+		}
+		return strings.TrimSuffix(base, ".agent.md")
+	}
+	if !strings.HasSuffix(base, ".md") {
+		return ""
+	}
+	base = strings.TrimSuffix(base, ".md")
+	return base
 }
 
 // buildInstalledSkillsMap builds a map of installed skill names from a manifest.
@@ -496,9 +593,9 @@ func completeResourceNames(resType ResourceType, mode string) []string {
 	case ResourceSkills:
 		return completeSkillNames(merged, mode)
 	case ResourceAgents:
-		return completeAgentNames(merged)
+		return completeAgentNames(merged, mode)
 	case ResourceInstructions:
-		return completeInstructionNames(merged)
+		return completeInstructionNames(merged, mode)
 	default:
 		return nil
 	}
@@ -532,22 +629,61 @@ func completeSkillNames(merged *manifest.Manifest, mode string) []string {
 	}
 }
 
-func completeAgentNames(merged *manifest.Manifest) []string {
-	items := collectAgents(merged)
-	var names []string
-	for _, item := range items {
-		names = append(names, item.Name)
+func completeAgentNames(merged *manifest.Manifest, mode string) []string {
+	switch mode {
+	case "available":
+		items := collectAvailableAgents(merged)
+		var names []string
+		for _, item := range items {
+			if !item.Installed {
+				names = append(names, item.Name)
+			}
+		}
+		return names
+	case "installed":
+		return resourceNamesFromItems(collectAgents(merged))
+	default:
+		names := resourceNamesFromItems(collectAvailableAgents(merged))
+		for _, n := range resourceNamesFromItems(collectAgents(merged)) {
+			if !contains(names, n) {
+				names = append(names, n)
+			}
+		}
+		return names
 	}
-	return names
 }
 
-func completeInstructionNames(merged *manifest.Manifest) []string {
-	items := collectInstructions(merged)
-	var names []string
-	for _, item := range items {
-		names = append(names, item.Name)
+func completeInstructionNames(merged *manifest.Manifest, mode string) []string {
+	switch mode {
+	case "available":
+		items := collectAvailableInstructions(merged)
+		var names []string
+		for _, item := range items {
+			if !item.Installed {
+				names = append(names, item.Name)
+			}
+		}
+		return names
+	case "installed":
+		return resourceNamesFromItems(collectInstructions(merged))
+	default:
+		names := resourceNamesFromItems(collectAvailableInstructions(merged))
+		for _, n := range resourceNamesFromItems(collectInstructions(merged)) {
+			if !contains(names, n) {
+				names = append(names, n)
+			}
+		}
+		return names
 	}
-	return names
+}
+
+func contains(items []string, v string) bool {
+	for _, item := range items {
+		if item == v {
+			return true
+		}
+	}
+	return false
 }
 
 // resourceNamesFromItems extracts name strings from a slice of ResourceItem.

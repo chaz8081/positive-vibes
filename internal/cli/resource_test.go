@@ -296,7 +296,7 @@ func TestFormatResourceList_Agents(t *testing.T) {
 	out := formatResourceList(ResourceAgents, items)
 	assert.Contains(t, out, "reviewer")
 	assert.Contains(t, out, "planner")
-	assert.Contains(t, out, "2 agents configured")
+	assert.Contains(t, out, "2 installed, 2 available")
 }
 
 func TestFormatResourceList_Instructions(t *testing.T) {
@@ -305,7 +305,7 @@ func TestFormatResourceList_Instructions(t *testing.T) {
 	}
 	out := formatResourceList(ResourceInstructions, items)
 	assert.Contains(t, out, "coding-standards")
-	assert.Contains(t, out, "1 instructions configured")
+	assert.Contains(t, out, "1 installed, 1 available")
 }
 
 func TestFormatResourceList_Empty(t *testing.T) {
@@ -338,7 +338,7 @@ func TestFormatAgentShow(t *testing.T) {
 		Path:     "./agents/reviewer.md",
 		Registry: "",
 	}
-	out := formatAgentShow(agent)
+	out := formatAgentShow(agent, true)
 	assert.Contains(t, out, "reviewer")
 	assert.Contains(t, out, "./agents/reviewer.md")
 	assert.Contains(t, out, "installed")
@@ -347,11 +347,14 @@ func TestFormatAgentShow(t *testing.T) {
 func TestFormatAgentShow_WithRegistry(t *testing.T) {
 	agent := manifest.AgentRef{
 		Name:     "reviewer",
-		Registry: "awesome-copilot/my-skill:agents/reviewer.md",
+		Registry: "awesome-copilot",
+		Path:     "my-skill/agents/reviewer.md",
 	}
-	out := formatAgentShow(agent)
+	out := formatAgentShow(agent, false)
 	assert.Contains(t, out, "reviewer")
-	assert.Contains(t, out, "awesome-copilot/my-skill:agents/reviewer.md")
+	assert.Contains(t, out, "awesome-copilot")
+	assert.Contains(t, out, "my-skill/agents/reviewer.md")
+	assert.Contains(t, out, "available")
 }
 
 // --- formatInstructionShow tests ---
@@ -361,7 +364,7 @@ func TestFormatInstructionShow(t *testing.T) {
 		Name:    "coding-standards",
 		Content: "Always use gofmt.",
 	}
-	out := formatInstructionShow(inst)
+	out := formatInstructionShow(inst, true)
 	assert.Contains(t, out, "coding-standards")
 	assert.Contains(t, out, "Always use gofmt.")
 	assert.Contains(t, out, "installed")
@@ -373,7 +376,7 @@ func TestFormatInstructionShow_WithPath(t *testing.T) {
 		Path:    "./instructions/standards.md",
 		ApplyTo: "opencode",
 	}
-	out := formatInstructionShow(inst)
+	out := formatInstructionShow(inst, true)
 	assert.Contains(t, out, "coding-standards")
 	assert.Contains(t, out, "./instructions/standards.md")
 	assert.Contains(t, out, "opencode")
@@ -562,6 +565,13 @@ func TestMakeValidArgsFunction_InstructionsReturnsEmpty_NoManifest(t *testing.T)
 	suggestions, directive := fn(rootCmd, []string{"instructions"}, "")
 	assert.Empty(t, suggestions)
 	assert.Equal(t, cobra.ShellCompDirectiveNoFileComp, directive)
+}
+
+func TestResourceNameFromPath_AgentAndInstructionSuffixes(t *testing.T) {
+	assert.Equal(t, "debug", resourceNameFromPath(ResourceAgents, "agents/debug.agent.md"))
+	assert.Equal(t, "markdown", resourceNameFromPath(ResourceInstructions, "instructions/markdown.instructions.md"))
+	assert.Equal(t, "", resourceNameFromPath(ResourceAgents, "agents/readme.md"))
+	assert.Equal(t, "", resourceNameFromPath(ResourceInstructions, "instructions/readme.md"))
 }
 
 // --- ValidArgsFunction wiring tests ---

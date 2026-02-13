@@ -26,3 +26,12 @@ type FileSource interface {
 	// a skill directory. Returns an empty slice if the directory does not exist.
 	ListFiles(skillName, relDir string) ([]string, error)
 }
+
+// ResourceSource exposes generic file operations for resource families that are
+// rooted at configurable registry base paths (skills, instructions, agents).
+// kind must be one of: "skills", "instructions", "agents".
+type ResourceSource interface {
+	SkillSource
+	FetchResourceFile(kind, relPath string) ([]byte, error)
+	ListResourceFiles(kind string) ([]string, error)
+}

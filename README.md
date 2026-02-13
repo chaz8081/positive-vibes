@@ -47,13 +47,13 @@ This scans your project, detects the language (Go, Node, Python), and creates a 
 positive-vibes install skills conventional-commits
 ```
 
-To add an instruction entry by name (creates a path-based instruction by convention):
+To add an instruction entry by name (uses registry when available, otherwise creates a local path-based entry):
 
 ```bash
 positive-vibes install instructions coding-standards
 ```
 
-To add an agent entry by name (creates a path-based agent by convention):
+To add an agent entry by name (uses registry when available, otherwise creates a local path-based entry):
 
 ```bash
 positive-vibes install agents code-reviewer
@@ -69,39 +69,44 @@ This reads your manifest and installs configured resources (skills, instructions
 
 ## The Manifest (`vibes.yaml`)
 
+The example below is runnable in this repo. First create local instruction/agent files:
+
+```bash
+mkdir -p instructions agents
+printf "Keep responses concise and actionable.\n" > instructions/repo-guidelines.md
+printf "# Local Reviewer\nFocus on correctness, readability, and tests.\n" > agents/local-reviewer.md
+```
+
 ```yaml
 registries:
   - name: awesome-copilot
     url: https://github.com/github/awesome-copilot
     ref: latest
     paths:
-      skills: skills/
+      skills: .
+      instructions: .
+      agents: .
 
 skills:
-  - name: conventional-commits
+  - name: gh-cli
     registry: awesome-copilot
-    path: conventional-commits
-  - name: code-review
-  - name: my-custom-skill
-    path: ./local-skills/my-custom-skill
+    path: skills/gh-cli
+  - name: local-conventional-commits
+    path: ./skills/conventional-commits
 
 instructions:
-  - name: frontend-typescript
-    content: "Always use TypeScript for frontend code"
-  - name: frontend-components
-    content: "Prefer functional components"
-  - name: team-standards
+  - name: markdown-guidelines
     registry: awesome-copilot
-    path: my-skill/instructions/standards.md
-  - name: team-guide
-    path: ./instructions/team-guide.md
+    path: instructions/markdown.instructions.md
+  - name: repo-guidelines
+    path: ./instructions/repo-guidelines.md
 
 agents:
-  - name: code-reviewer
-    path: ./agents/reviewer.md
-  - name: registry-reviewer
+  - name: debug-agent
     registry: awesome-copilot
-    path: my-skill/agents/reviewer.md
+    path: agents/debug.agent.md
+  - name: local-reviewer
+    path: ./agents/local-reviewer.md
 
 targets:
   - vscode-copilot
@@ -109,11 +114,14 @@ targets:
   - cursor
 ```
 
-Instruction entries are object-based: each item must include `name` and exactly one of `content` or `path`.
+Instruction entries are object-based: each item must include `name` and one source: `content` or `path`.
+When `registry` is set, use `path` (file path inside that registry).
 
 Agent entries are object-based: each item must include `name` and `path`; add `registry` when the path is inside a registry.
 
 Registry-backed resources use `registry: <name>` + `path`. For skills, `path` is a folder inside the registry. For instructions and agents, `path` is a file inside the registry.
+
+Registry paths default to repo root (`.`) for all resource types. You can override each independently with `registries[].paths.skills`, `registries[].paths.instructions`, and `registries[].paths.agents`.
 
 `config validate` returns an error when a project resource references a registry that exists only in global config, to keep project manifests portable.
 
@@ -164,6 +172,15 @@ registries:
     paths:
       skills: skills/
 
+  # Example with custom roots per resource type
+  - name: team-content
+    url: https://github.com/myorg/team-content
+    ref: main
+    paths:
+      skills: packages/skills
+      instructions: docs/instructions
+      agents: docs/agents
+
   # Pin to a stable release
   - name: team-skills
     url: https://github.com/myorg/team-skills
@@ -187,7 +204,7 @@ registries:
 | ------- | ----------- |
 | `positive-vibes init` | Scan project and create `vibes.yaml` |
 | `positive-vibes install <resource-type> [name...]` | Add skills, agents, or instructions to your manifest |
-| `positive-vibes install agents <name>` | Add a path-based agent entry (`./agents/<name>.md`) |
+| `positive-vibes install agents <name>` | Add an agent by name (registry-backed when available, else local path convention) |
 | `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`) |
 | `positive-vibes list agents` | List configured agents |
 | `positive-vibes show <resource-type> <name>` | Show detailed info for one resource |

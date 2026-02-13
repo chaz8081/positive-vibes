@@ -85,11 +85,13 @@ func gitRegistriesFromManifest(m *manifest.Manifest) []registry.SkillSource {
 	var sources []registry.SkillSource
 	for _, r := range m.Registries {
 		sources = append(sources, &registry.GitRegistry{
-			RegistryName: r.Name,
-			URL:          r.URL,
-			CachePath:    defaultCachePath(r.Name),
-			SkillsPath:   r.SkillsPath(),
-			Ref:          r.Ref,
+			RegistryName:     r.Name,
+			URL:              r.URL,
+			CachePath:        defaultCachePath(r.Name),
+			SkillsPath:       r.SkillsPath(),
+			InstructionsPath: r.InstructionsPath(),
+			AgentsPath:       r.AgentsPath(),
+			Ref:              r.Ref,
 		})
 	}
 	return sources

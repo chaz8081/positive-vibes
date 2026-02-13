@@ -19,11 +19,13 @@ import (
 // It clones the repo on first use into CachePath and reads skills from
 // the SkillsPath subdirectory within the cloned worktree.
 type GitRegistry struct {
-	RegistryName string
-	URL          string
-	CachePath    string // directory to clone into; e.g., ~/.positive-vibes/cache/<name>/
-	SkillsPath   string // subdirectory inside the repo where skills live; defaults to "."
-	Ref          string // "latest", branch name, tag name, or commit SHA
+	RegistryName     string
+	URL              string
+	CachePath        string // directory to clone into; e.g., ~/.positive-vibes/cache/<name>/
+	SkillsPath       string // subdirectory inside the repo where skills live; defaults to "."
+	InstructionsPath string // base path for instructions in registry; defaults to "."
+	AgentsPath       string // base path for agents in registry; defaults to "."
+	Ref              string // "latest", branch name, tag name, or commit SHA
 }
 
 const RefLatest = "latest"
@@ -142,6 +144,24 @@ func (r *GitRegistry) skillsDir() string {
 	return filepath.Join(r.CachePath, sp)
 }
 
+func (r *GitRegistry) kindDir(kind string) string {
+	var p string
+	switch kind {
+	case "skills":
+		p = r.SkillsPath
+	case "instructions":
+		p = r.InstructionsPath
+	case "agents":
+		p = r.AgentsPath
+	default:
+		p = "."
+	}
+	if p == "" || p == "." {
+		return r.CachePath
+	}
+	return filepath.Join(r.CachePath, p)
+}
+
 // Fetch retrieves a skill by name.
 // It returns the parsed Skill and the path to the skill's source directory on disk.
 func (r *GitRegistry) Fetch(name string) (*schema.Skill, string, error) {
@@ -228,6 +248,56 @@ func (r *GitRegistry) ListFiles(skillName, relDir string) ([]string, error) {
 		if !ent.IsDir() {
 			names = append(names, ent.Name())
 		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// FetchResourceFile retrieves raw file bytes from a resource base directory.
+// kind must be one of: "skills", "instructions", "agents".
+func (r *GitRegistry) FetchResourceFile(kind, relPath string) ([]byte, error) {
+	if err := r.ensureCache(); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(r.kindDir(kind), relPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("file not found: %s (registry %s, kind %s)", relPath, r.RegistryName, kind)
+	}
+	return data, nil
+}
+
+// ListResourceFiles recursively lists files under the configured base path for
+// the requested resource kind. Returned paths are relative to that base path.
+func (r *GitRegistry) ListResourceFiles(kind string) ([]string, error) {
+	if err := r.ensureCache(); err != nil {
+		return nil, err
+	}
+	base := r.kindDir(kind)
+	if _, err := os.Stat(base); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var names []string
+	err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(base, path)
+		if err != nil {
+			return err
+		}
+		names = append(names, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	sort.Strings(names)
 	return names, nil

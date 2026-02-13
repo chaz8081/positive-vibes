@@ -791,6 +791,56 @@ func TestGitRegistry_ListFiles_NestedSubdirs(t *testing.T) {
 	assert.Equal(t, []string{"top-level.md"}, files)
 }
 
+func TestGitRegistry_ListResourceFiles_DefaultRoot(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"instructions/markdown.instructions.md": "# Markdown",
+		"agents/debug.agent.md":                 "# Debug Agent",
+		"skills/sample/SKILL.md":                "---\nname: sample\n---\n# Sample\n",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "resource-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "resource-reg"),
+		SkillsPath:   ".",
+	}
+
+	instFiles, err := reg.ListResourceFiles("instructions")
+	require.NoError(t, err)
+	assert.Contains(t, instFiles, "instructions/markdown.instructions.md")
+
+	agentFiles, err := reg.ListResourceFiles("agents")
+	require.NoError(t, err)
+	assert.Contains(t, agentFiles, "agents/debug.agent.md")
+}
+
+func TestGitRegistry_FetchResourceFile_WithCustomPaths(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"repo-skills/skill-a/SKILL.md":            "---\nname: skill-a\n---\n# A\n",
+		"repo-instructions/setup.instructions.md": "Use setup checklist.",
+		"repo-agents/reviewer.agent.md":           "# Reviewer",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName:     "resource-reg",
+		URL:              repoDir,
+		CachePath:        filepath.Join(cacheDir, "resource-reg"),
+		SkillsPath:       "repo-skills",
+		InstructionsPath: "repo-instructions",
+		AgentsPath:       "repo-agents",
+	}
+
+	inst, err := reg.FetchResourceFile("instructions", "setup.instructions.md")
+	require.NoError(t, err)
+	assert.Equal(t, "Use setup checklist.", string(inst))
+
+	agent, err := reg.FetchResourceFile("agents", "reviewer.agent.md")
+	require.NoError(t, err)
+	assert.Equal(t, "# Reviewer", string(agent))
+}
+
 func TestGitRegistry_Fetch_PinnedRef_FallsBackToCache(t *testing.T) {
 	repoDir := setupTestGitRepo(t, ".", map[string]string{
 		"cached-skill": "---\nname: cached-skill\n---\n# Cached\n",

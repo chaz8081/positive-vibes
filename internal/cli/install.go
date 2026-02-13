@@ -137,6 +137,7 @@ func installSkillsRun(names []string) {
 
 func installAgentsRun(names []string) {
 	project := ProjectDir()
+	globalPath := defaultGlobalManifestPath()
 
 	m, manifestPath, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
@@ -148,6 +149,43 @@ func installAgentsRun(names []string) {
 	existing := make(map[string]bool)
 	for _, a := range m.Agents {
 		existing[a.Name] = true
+	}
+
+	merged, _ := manifest.LoadMergedManifest(project, globalPath)
+	availableRefs := collectRegistryResourceItems(merged, ResourceAgents)
+	availableByName := make(map[string]registryResourceItem, len(availableRefs))
+	for _, ref := range availableRefs {
+		availableByName[ref.Name] = ref
+	}
+
+	if len(names) == 0 {
+		var options []huh.Option[string]
+		for _, ref := range availableRefs {
+			if !existing[ref.Name] {
+				options = append(options, huh.NewOption(ref.Name, ref.Name))
+			}
+		}
+		if len(options) > 0 {
+			var selected []string
+			form := huh.NewForm(
+				huh.NewGroup(
+					huh.NewMultiSelect[string]().
+						Title("Select agents to install").
+						Description("Use space to toggle, enter to confirm").
+						Options(options...).
+						Value(&selected),
+				),
+			)
+			if err := form.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return
+			}
+			if len(selected) == 0 {
+				fmt.Println("No agents selected.")
+				return
+			}
+			names = selected
+		}
 	}
 
 	// If no names provided, prompt for agent details interactively
@@ -243,7 +281,8 @@ func installAgentsRun(names []string) {
 		return
 	}
 
-	// Non-interactive: add named agents with path source (convention: ./agents/<name>.md)
+	// Non-interactive: add named agents from registry when available,
+	// otherwise use local path convention.
 	added := 0
 	for _, name := range names {
 		if existing[name] {
@@ -251,14 +290,21 @@ func installAgentsRun(names []string) {
 			continue
 		}
 
-		agent := manifest.AgentRef{
-			Name: name,
-			Path: fmt.Sprintf("./agents/%s.md", name),
+		agent := manifest.AgentRef{Name: name}
+		if ref, ok := availableByName[name]; ok {
+			agent.Registry = ref.Registry
+			agent.Path = ref.Path
+		} else {
+			agent.Path = fmt.Sprintf("./agents/%s.md", name)
 		}
 		m.Agents = append(m.Agents, agent)
 		existing[name] = true
 		added++
-		fmt.Printf("Added agent '%s' (path: %s)\n", name, agent.Path)
+		if agent.Registry != "" {
+			fmt.Printf("Added agent '%s' (registry: %s, path: %s)\n", name, agent.Registry, agent.Path)
+		} else {
+			fmt.Printf("Added agent '%s' (path: %s)\n", name, agent.Path)
+		}
 	}
 
 	if added > 0 {
@@ -273,6 +319,7 @@ func installAgentsRun(names []string) {
 
 func installInstructionsRun(names []string) {
 	project := ProjectDir()
+	globalPath := defaultGlobalManifestPath()
 
 	m, manifestPath, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
@@ -284,6 +331,43 @@ func installInstructionsRun(names []string) {
 	existing := make(map[string]bool)
 	for _, inst := range m.Instructions {
 		existing[inst.Name] = true
+	}
+
+	merged, _ := manifest.LoadMergedManifest(project, globalPath)
+	availableRefs := collectRegistryResourceItems(merged, ResourceInstructions)
+	availableByName := make(map[string]registryResourceItem, len(availableRefs))
+	for _, ref := range availableRefs {
+		availableByName[ref.Name] = ref
+	}
+
+	if len(names) == 0 {
+		var options []huh.Option[string]
+		for _, ref := range availableRefs {
+			if !existing[ref.Name] {
+				options = append(options, huh.NewOption(ref.Name, ref.Name))
+			}
+		}
+		if len(options) > 0 {
+			var selected []string
+			form := huh.NewForm(
+				huh.NewGroup(
+					huh.NewMultiSelect[string]().
+						Title("Select instructions to install").
+						Description("Use space to toggle, enter to confirm").
+						Options(options...).
+						Value(&selected),
+				),
+			)
+			if err := form.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return
+			}
+			if len(selected) == 0 {
+				fmt.Println("No instructions selected.")
+				return
+			}
+			names = selected
+		}
 	}
 
 	// If no names provided, prompt for instruction details interactively
@@ -367,7 +451,8 @@ func installInstructionsRun(names []string) {
 		return
 	}
 
-	// Non-interactive: add named instructions with path source (convention: ./instructions/<name>.md)
+	// Non-interactive: add named instructions from registry when available,
+	// otherwise use local path convention.
 	added := 0
 	for _, name := range names {
 		if existing[name] {
@@ -375,14 +460,21 @@ func installInstructionsRun(names []string) {
 			continue
 		}
 
-		inst := manifest.InstructionRef{
-			Name: name,
-			Path: fmt.Sprintf("./instructions/%s.md", name),
+		inst := manifest.InstructionRef{Name: name}
+		if ref, ok := availableByName[name]; ok {
+			inst.Registry = ref.Registry
+			inst.Path = ref.Path
+		} else {
+			inst.Path = fmt.Sprintf("./instructions/%s.md", name)
 		}
 		m.Instructions = append(m.Instructions, inst)
 		existing[name] = true
 		added++
-		fmt.Printf("Added instruction '%s' (path: %s)\n", name, inst.Path)
+		if inst.Registry != "" {
+			fmt.Printf("Added instruction '%s' (registry: %s, path: %s)\n", name, inst.Registry, inst.Path)
+		} else {
+			fmt.Printf("Added instruction '%s' (path: %s)\n", name, inst.Path)
+		}
 	}
 
 	if added > 0 {

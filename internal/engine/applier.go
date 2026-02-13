@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
@@ -178,14 +177,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		sourcePath := ""
 		tempFile := ""
 		if inst.Registry != "" {
-			skillName, relPath, parseErr := splitRegistryFilePath(inst.Path)
-			if parseErr != nil {
-				errMsg := fmt.Sprintf("instruction %s: invalid registry path %q: %v", inst.Name, inst.Path, parseErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
-				continue
-			}
-			data, fetchErr := a.fetchFileFromRegistry(inst.Registry, skillName, relPath)
+			data, fetchErr := a.fetchResourceFileFromRegistry(inst.Registry, "instructions", inst.Path)
 			if fetchErr != nil {
 				errMsg := fmt.Sprintf("instruction %s: fetch from registry: %v", inst.Name, fetchErr)
 				res.Errors = append(res.Errors, errMsg)
@@ -251,20 +243,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		// If agent.Registry is set, fetch the file from the registry
 		var tempFile string
 		if agent.Registry != "" {
-			skillName, relPath, parseErr := splitRegistryFilePath(agent.Path)
-			if parseErr != nil {
-				errMsg := fmt.Sprintf("agent %s: invalid registry path %q: %v", agent.Name, agent.Path, parseErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName: agent.Name,
-					Kind:      KindAgent,
-					Status:    OpError,
-					Error:     errMsg,
-				})
-				continue
-			}
-
-			data, fetchErr := a.fetchFileFromRegistry(agent.Registry, skillName, relPath)
+			data, fetchErr := a.fetchResourceFileFromRegistry(agent.Registry, "agents", agent.Path)
 			if fetchErr != nil {
 				errMsg := fmt.Sprintf("agent %s: fetch from registry: %v", agent.Name, fetchErr)
 				res.Errors = append(res.Errors, errMsg)
@@ -324,16 +303,6 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 	return res, nil
 }
 
-func splitRegistryFilePath(path string) (skillName, relPath string, err error) {
-	slashIdx := strings.Index(path, "/")
-	if slashIdx < 1 || slashIdx == len(path)-1 {
-		return "", "", fmt.Errorf("expected format 'skillName/relative/file.md'")
-	}
-	skillName = path[:slashIdx]
-	relPath = path[slashIdx+1:]
-	return skillName, relPath, nil
-}
-
 func writeTempResourceFile(projectDir, pattern string, data []byte) (string, error) {
 	tmp, err := os.CreateTemp(projectDir, pattern)
 	if err != nil {
@@ -361,18 +330,18 @@ func (a *Applier) fetchSkillFromRegistry(regName, skillName string) (*schema.Ski
 	return nil, "", fmt.Errorf("registry %q not found", regName)
 }
 
-// fetchFileFromRegistry looks up a registry by name, asserts it supports
-// FileSource, and fetches the requested file.
-func (a *Applier) fetchFileFromRegistry(regName, skillName, relPath string) ([]byte, error) {
+// fetchResourceFileFromRegistry looks up a registry by name, asserts it
+// supports resource file access, and fetches the requested file.
+func (a *Applier) fetchResourceFileFromRegistry(regName, kind, relPath string) ([]byte, error) {
 	for _, r := range a.Registries {
 		if r.Name() != regName {
 			continue
 		}
-		fs, ok := r.(registry.FileSource)
+		fs, ok := r.(registry.ResourceSource)
 		if !ok {
 			return nil, fmt.Errorf("registry %q does not support file access", regName)
 		}
-		return fs.FetchFile(skillName, relPath)
+		return fs.FetchResourceFile(kind, relPath)
 	}
 	return nil, fmt.Errorf("registry %q not found", regName)
 }

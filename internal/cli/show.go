@@ -82,7 +82,13 @@ func showAgentRun(name string, merged *manifest.Manifest) {
 	}
 	for _, a := range merged.Agents {
 		if a.Name == name {
-			fmt.Print(formatAgentShow(a))
+			fmt.Print(formatAgentShow(a, true))
+			return
+		}
+	}
+	for _, ref := range collectRegistryResourceItems(merged, ResourceAgents) {
+		if ref.Name == name {
+			fmt.Print(formatAgentShow(manifest.AgentRef{Name: name, Registry: ref.Registry, Path: ref.Path}, false))
 			return
 		}
 	}
@@ -96,7 +102,13 @@ func showInstructionRun(name string, merged *manifest.Manifest) {
 	}
 	for _, inst := range merged.Instructions {
 		if inst.Name == name {
-			fmt.Print(formatInstructionShow(inst))
+			fmt.Print(formatInstructionShow(inst, true))
+			return
+		}
+	}
+	for _, ref := range collectRegistryResourceItems(merged, ResourceInstructions) {
+		if ref.Name == name {
+			fmt.Print(formatInstructionShow(manifest.InstructionRef{Name: name, Registry: ref.Registry, Path: ref.Path}, false))
 			return
 		}
 	}

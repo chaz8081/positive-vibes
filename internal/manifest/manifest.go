@@ -193,13 +193,31 @@ type RegistryRef struct {
 	Name  string            `yaml:"name"`
 	URL   string            `yaml:"url"`
 	Ref   string            `yaml:"ref"`
-	Paths map[string]string `yaml:"paths,omitempty"` // e.g. {"skills": "skills/", "prompts": "prompts/"}
+	Paths map[string]string `yaml:"paths,omitempty"` // e.g. {"skills": "skills/", "instructions": "instructions/", "agents": "agents/"}
 }
 
 // SkillsPath returns the configured path for skills in this registry,
 // defaulting to "." (repo root) if not set.
 func (r RegistryRef) SkillsPath() string {
 	if p, ok := r.Paths["skills"]; ok && p != "" {
+		return p
+	}
+	return "."
+}
+
+// InstructionsPath returns the configured base path for instructions in this
+// registry, defaulting to "." (repo root) if not set.
+func (r RegistryRef) InstructionsPath() string {
+	if p, ok := r.Paths["instructions"]; ok && p != "" {
+		return p
+	}
+	return "."
+}
+
+// AgentsPath returns the configured base path for agents in this registry,
+// defaulting to "." (repo root) if not set.
+func (r RegistryRef) AgentsPath() string {
+	if p, ok := r.Paths["agents"]; ok && p != "" {
 		return p
 	}
 	return "."

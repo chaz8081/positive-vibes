@@ -10,6 +10,8 @@ import (
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/chaz8081/positive-vibes/internal/target"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // setupTestGitRepoWithFiles creates a local git repo with arbitrary files committed.
@@ -849,6 +851,61 @@ instructions:
 	if string(data) != "Use small functions and clear names." {
 		t.Fatalf("instruction content mismatch: got %q", string(data))
 	}
+}
+
+func TestApplierApply_InstructionAndAgentFromRegistry_CustomPaths(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"repo-instructions/guide.instructions.md": "Always keep tests green.",
+		"repo-agents/reviewer.agent.md":           "# Reviewer\nReview all changes.",
+	})
+
+	cacheDir := t.TempDir()
+	gitReg := &registry.GitRegistry{
+		RegistryName:     "test-remote",
+		URL:              repoDir,
+		CachePath:        filepath.Join(cacheDir, "test-remote"),
+		SkillsPath:       ".",
+		InstructionsPath: "repo-instructions",
+		AgentsPath:       "repo-agents",
+	}
+
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: conventional-commits
+instructions:
+- name: guide
+  registry: test-remote
+  path: guide.instructions.md
+agents:
+- name: reviewer
+  registry: test-remote
+  path: reviewer.agent.md
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry(), gitReg}
+	a := NewApplier(regs)
+	res, err := a.Apply(mfile, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	instFile := filepath.Join(tmp, ".opencode", "instructions", "guide.md")
+	instData, err := os.ReadFile(instFile)
+	require.NoError(t, err)
+	assert.Equal(t, "Always keep tests green.", string(instData))
+
+	agentFile := filepath.Join(tmp, ".opencode", "agents", "reviewer.md")
+	agentData, err := os.ReadFile(agentFile)
+	require.NoError(t, err)
+	assert.Equal(t, "# Reviewer\nReview all changes.", string(agentData))
 }
 
 func TestApplierApply_SkillFromSpecificRegistryPath(t *testing.T) {

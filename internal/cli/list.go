@@ -69,7 +69,7 @@ func listSkillsRun(merged *manifest.Manifest) {
 }
 
 func listAgentsRun(merged *manifest.Manifest) {
-	items := collectAgents(merged)
+	items := collectAvailableAgents(merged)
 
 	if listJSON {
 		fmt.Println(formatResourceListJSON(ResourceAgents, items))
@@ -80,7 +80,7 @@ func listAgentsRun(merged *manifest.Manifest) {
 }
 
 func listInstructionsRun(merged *manifest.Manifest) {
-	items := collectInstructions(merged)
+	items := collectAvailableInstructions(merged)
 
 	if listJSON {
 		fmt.Println(formatResourceListJSON(ResourceInstructions, items))
