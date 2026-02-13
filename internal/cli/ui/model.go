@@ -14,22 +14,40 @@ const (
 )
 
 type model struct {
-	activeRail railTab
-	cursor     int
-	showHelp   bool
-	width      int
-	items      []string
-	keys       keyMap
+	activeRail       railTab
+	cursor           int
+	showHelp         bool
+	showInstallModal bool
+	width            int
+	rows             []ResourceRow
+	items            []string
+	keys             keyMap
+
+	installCursor   int
+	installChoices  []ResourceRow
+	installSelected map[string]bool
+
+	listResources    func(kind string) ([]ResourceRow, error)
+	installResources func(kind string, names []string) error
 }
 
 func newModel() model {
+	rows := []ResourceRow{
+		{Name: "placeholder-1"},
+		{Name: "placeholder-2"},
+		{Name: "placeholder-3"},
+	}
+
 	return model{
-		activeRail: railSkills,
-		cursor:     0,
-		showHelp:   false,
-		width:      96,
-		items:      []string{"placeholder-1", "placeholder-2", "placeholder-3"},
-		keys:       defaultKeyMap(),
+		activeRail:       railSkills,
+		cursor:           0,
+		showHelp:         false,
+		showInstallModal: false,
+		width:            96,
+		rows:             rows,
+		items:            []string{"placeholder-1", "placeholder-2", "placeholder-3"},
+		keys:             defaultKeyMap(),
+		installSelected:  make(map[string]bool),
 	}
 }
 
@@ -54,6 +72,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.showInstallModal {
+			switch {
+			case key.Matches(msg, m.keys.CloseHelp):
+				m.closeInstallModal()
+			case key.Matches(msg, m.keys.CursorDown):
+				if m.installCursor < len(m.installChoices)-1 {
+					m.installCursor++
+				}
+			case key.Matches(msg, m.keys.CursorUp):
+				if m.installCursor > 0 {
+					m.installCursor--
+				}
+			case msg.Type == tea.KeySpace:
+				m.toggleInstallSelection()
+			case msg.Type == tea.KeyEnter:
+				m.confirmInstallSelection()
+			}
+			return m, nil
+		}
+
+		if msg.String() == "i" {
+			m.openInstallModal()
+			return m, nil
+		}
+
 		switch {
 		case key.Matches(msg, m.keys.LeftRail):
 			m.activeRail = m.wrapRail(-1)
@@ -71,6 +114,104 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *model) openInstallModal() {
+	m.refreshRowsForActiveRail()
+
+	m.installChoices = m.installChoices[:0]
+	for _, row := range m.rows {
+		if !row.Installed {
+			m.installChoices = append(m.installChoices, row)
+		}
+	}
+
+	if len(m.installChoices) == 0 {
+		m.closeInstallModal()
+		return
+	}
+
+	m.installCursor = 0
+	m.installSelected = make(map[string]bool)
+	m.showInstallModal = true
+}
+
+func (m *model) closeInstallModal() {
+	m.showInstallModal = false
+	m.installCursor = 0
+	m.installChoices = nil
+	m.installSelected = make(map[string]bool)
+}
+
+func (m *model) toggleInstallSelection() {
+	if len(m.installChoices) == 0 || m.installCursor < 0 || m.installCursor >= len(m.installChoices) {
+		return
+	}
+
+	name := m.installChoices[m.installCursor].Name
+	if m.installSelected[name] {
+		delete(m.installSelected, name)
+		return
+	}
+	m.installSelected[name] = true
+}
+
+func (m *model) confirmInstallSelection() {
+	selected := m.selectedInstallNames()
+	if len(selected) > 0 && m.installResources != nil {
+		_ = m.installResources(m.activeKind(), selected)
+	}
+	m.refreshRowsForActiveRail()
+	m.closeInstallModal()
+}
+
+func (m *model) refreshRowsForActiveRail() {
+	if m.listResources == nil {
+		return
+	}
+	rows, err := m.listResources(m.activeKind())
+	if err != nil {
+		return
+	}
+	m.setRows(rows)
+}
+
+func (m *model) setRows(rows []ResourceRow) {
+	m.rows = append([]ResourceRow(nil), rows...)
+	m.items = make([]string, 0, len(m.rows))
+	for _, row := range m.rows {
+		m.items = append(m.items, row.Name)
+	}
+	if len(m.items) == 0 {
+		m.cursor = 0
+		return
+	}
+	if m.cursor >= len(m.items) {
+		m.cursor = len(m.items) - 1
+	}
+}
+
+func (m model) selectedInstallNames() []string {
+	names := make([]string, 0, len(m.installSelected))
+	for _, row := range m.installChoices {
+		if m.installSelected[row.Name] {
+			names = append(names, row.Name)
+		}
+	}
+	return names
+}
+
+func (m model) activeKind() string {
+	switch m.activeRail {
+	case railSkills:
+		return resourceKindSkills
+	case railInstructions:
+		return resourceKindInstructions
+	case railAgents:
+		return resourceKindAgents
+	default:
+		return resourceKindSkills
+	}
 }
 
 func (m model) railTabs() []string {

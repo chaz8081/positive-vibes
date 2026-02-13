@@ -32,7 +32,13 @@ func (m model) View() string {
 	}
 
 	footerWidth := contentWidthForStyle(width, footerStyle)
-	footer := footerStyle.Width(footerWidth).Render("left/right: rail  up/down: move  ?: help")
+	footer := footerStyle.Width(footerWidth).Render("left/right: rail  up/down: move  i: install  ?: help")
+
+	if m.showInstallModal {
+		installWidth := contentWidthForStyle(width, helpStyle)
+		install := m.renderInstallModal(installWidth)
+		return lipgloss.JoinVertical(lipgloss.Left, body, footer, "", install)
+	}
 
 	if m.showHelp {
 		helpWidth := contentWidthForStyle(width, helpStyle)
@@ -70,6 +76,30 @@ func (m model) renderList(width int) string {
 
 func (model) renderPreview(width int) string {
 	return panelStyle.Width(width).Render(mutedStyle.Render("preview panel"))
+}
+
+func (m model) renderInstallModal(width int) string {
+	lines := []string{"Install resources", "- space: toggle  enter: confirm  esc: cancel", ""}
+	if len(m.installChoices) == 0 {
+		lines = append(lines, mutedStyle.Render("No resources available to install."))
+		return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
+	}
+
+	for i, row := range m.installChoices {
+		marker := "[ ]"
+		if m.installSelected[row.Name] {
+			marker = "[x]"
+		}
+		line := marker + " " + row.Name
+		if i == m.installCursor {
+			line = highlightStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		lines = append(lines, line)
+	}
+
+	return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) layoutWidths(totalWidth int) (rail int, list int, preview int, stacked bool) {
