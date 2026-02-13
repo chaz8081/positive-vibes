@@ -1,11 +1,42 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/chaz8081/positive-vibes/pkg/schema"
 )
 
 func TestService_ListAndShow(t *testing.T) {
-	availableByKind := map[string][]resourceRow{
+	tmpDir := t.TempDir()
+	projectDir := filepath.Join(tmpDir, "project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(projectDir) error: %v", err)
+	}
+
+	manifestYAML := `skills:
+  - name: code-review
+instructions:
+  - name: style
+    path: ./instructions/style.instructions.md
+agents:
+  - name: reviewer
+    path: ./agents/reviewer.agent.md
+targets:
+  - opencode
+`
+	if err := os.WriteFile(filepath.Join(projectDir, "vibes.yaml"), []byte(manifestYAML), 0o644); err != nil {
+		t.Fatalf("WriteFile(vibes.yaml) error: %v", err)
+	}
+
+	globalPath := filepath.Join(tmpDir, "global", "vibes.yaml")
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(globalPath dir) error: %v", err)
+	}
+
+	availableByKind := map[string][]ResourceRow{
 		"skills": {
 			{Name: "code-review"},
 			{Name: "tdd"},
@@ -20,7 +51,7 @@ func TestService_ListAndShow(t *testing.T) {
 		},
 	}
 
-	installedByKind := map[string][]resourceRow{
+	installedByKind := map[string][]ResourceRow{
 		"skills": {
 			{Name: "code-review", Installed: true},
 		},
@@ -32,36 +63,15 @@ func TestService_ListAndShow(t *testing.T) {
 		},
 	}
 
-	details := map[string]ResourceDetail{
-		"skills/code-review": {
-			Kind:      "skills",
-			Name:      "code-review",
-			Installed: true,
-			Payload:   "skill-payload",
-		},
-		"agents/reviewer": {
-			Kind:      "agents",
-			Name:      "reviewer",
-			Installed: false,
-			Payload:   "agent-payload",
-		},
-		"instructions/style": {
-			Kind:      "instructions",
-			Name:      "style",
-			Installed: true,
-			Payload:   "instruction-payload",
-		},
-	}
-
 	svc := newServiceWithDeps(serviceDeps{
-		listAvailable: func(kind string) ([]resourceRow, error) {
+		listAvailable: func(kind string) ([]ResourceRow, error) {
 			return availableByKind[kind], nil
 		},
-		listInstalled: func(kind string) ([]resourceRow, error) {
+		listInstalled: func(kind string) ([]ResourceRow, error) {
 			return installedByKind[kind], nil
 		},
 		showDetail: func(kind, name string) (ResourceDetail, error) {
-			return details[kind+"/"+name], nil
+			return showResourceDetail(projectDir, globalPath, kind, name)
 		},
 		install: func(string, []string) error { return nil },
 		remove:  func(string, []string) error { return nil },
@@ -91,23 +101,35 @@ func TestService_ListAndShow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ShowResource(skills) returned error: %v", err)
 	}
-	if skillDetail.Payload != "skill-payload" {
-		t.Fatalf("ShowResource(skills) payload = %v, want skill-payload", skillDetail.Payload)
+	skillPayload, ok := skillDetail.Payload.(*schema.Skill)
+	if !ok {
+		t.Fatalf("ShowResource(skills) payload type = %T, want *schema.Skill", skillDetail.Payload)
+	}
+	if skillPayload.Name != "code-review" {
+		t.Fatalf("ShowResource(skills) payload name = %q, want code-review", skillPayload.Name)
 	}
 
 	agentDetail, err := svc.ShowResource("agents", "reviewer")
 	if err != nil {
 		t.Fatalf("ShowResource(agents) returned error: %v", err)
 	}
-	if agentDetail.Payload != "agent-payload" {
-		t.Fatalf("ShowResource(agents) payload = %v, want agent-payload", agentDetail.Payload)
+	agentPayload, ok := agentDetail.Payload.(manifest.AgentRef)
+	if !ok {
+		t.Fatalf("ShowResource(agents) payload type = %T, want manifest.AgentRef", agentDetail.Payload)
+	}
+	if agentPayload.Name != "reviewer" {
+		t.Fatalf("ShowResource(agents) payload name = %q, want reviewer", agentPayload.Name)
 	}
 
 	instructionDetail, err := svc.ShowResource("instructions", "style")
 	if err != nil {
 		t.Fatalf("ShowResource(instructions) returned error: %v", err)
 	}
-	if instructionDetail.Payload != "instruction-payload" {
-		t.Fatalf("ShowResource(instructions) payload = %v, want instruction-payload", instructionDetail.Payload)
+	instructionPayload, ok := instructionDetail.Payload.(manifest.InstructionRef)
+	if !ok {
+		t.Fatalf("ShowResource(instructions) payload type = %T, want manifest.InstructionRef", instructionDetail.Payload)
+	}
+	if instructionPayload.Name != "style" {
+		t.Fatalf("ShowResource(instructions) payload name = %q, want style", instructionPayload.Name)
 	}
 }

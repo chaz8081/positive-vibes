@@ -45,6 +45,17 @@ type ResourceItem struct {
 	Installed bool
 }
 
+// ResourceDetailResult describes a fully-resolved resource for show operations.
+type ResourceDetailResult struct {
+	Kind        ResourceType
+	Name        string
+	Installed   bool
+	Registry    string
+	RegistryURL string
+	Path        string
+	Payload     any
+}
+
 // MergeResourceItems merges available and installed resources into a deduplicated
 // list keyed by Name. Installed entries always win for the Installed flag.
 func MergeResourceItems(available, installed []ResourceItem) []ResourceItem {
@@ -69,6 +80,135 @@ func MergeResourceItems(available, installed []ResourceItem) []ResourceItem {
 		merged = append(merged, item)
 	}
 	return merged
+}
+
+// ListAvailableResourceItems returns discoverable resources for a type.
+func ListAvailableResourceItems(projectDir, globalPath, kind string) ([]ResourceItem, error) {
+	resType, err := ParseResourceType(kind)
+	if err != nil {
+		return nil, err
+	}
+	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
+
+	switch resType {
+	case ResourceSkills:
+		return collectAvailableSkills(merged), nil
+	case ResourceAgents:
+		return collectAvailableAgents(merged), nil
+	case ResourceInstructions:
+		return collectAvailableInstructions(merged), nil
+	default:
+		return nil, fmt.Errorf("unknown resource type %q", kind)
+	}
+}
+
+// ListInstalledResourceItems returns installed resources for a type.
+func ListInstalledResourceItems(projectDir, globalPath, kind string) ([]ResourceItem, error) {
+	resType, err := ParseResourceType(kind)
+	if err != nil {
+		return nil, err
+	}
+	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
+
+	switch resType {
+	case ResourceSkills:
+		return collectInstalledSkills(merged), nil
+	case ResourceAgents:
+		return collectAgents(merged), nil
+	case ResourceInstructions:
+		return collectInstructions(merged), nil
+	default:
+		return nil, fmt.Errorf("unknown resource type %q", kind)
+	}
+}
+
+// ShowResourceDetail resolves a resource detail using merged manifest + registries.
+func ShowResourceDetail(projectDir, globalPath, kind, name string) (ResourceDetailResult, error) {
+	resType, err := ParseResourceType(kind)
+	if err != nil {
+		return ResourceDetailResult{}, err
+	}
+	if name == "" {
+		return ResourceDetailResult{}, fmt.Errorf("resource name is required")
+	}
+
+	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
+
+	switch resType {
+	case ResourceSkills:
+		skill, regName, err := resolveSkillFromSources(name, buildAllSources(merged))
+		if err != nil {
+			return ResourceDetailResult{}, err
+		}
+		return ResourceDetailResult{
+			Kind:        resType,
+			Name:        name,
+			Installed:   hasInstalledSkill(merged, name),
+			Registry:    regName,
+			RegistryURL: registryURLByName(merged, regName),
+			Payload:     skill,
+		}, nil
+	case ResourceAgents:
+		if merged != nil {
+			for _, a := range merged.Agents {
+				if a.Name == name {
+					return ResourceDetailResult{
+						Kind:      resType,
+						Name:      name,
+						Installed: true,
+						Registry:  a.Registry,
+						Path:      a.Path,
+						Payload:   a,
+					}, nil
+				}
+			}
+		}
+		for _, ref := range collectRegistryResourceItems(merged, resType) {
+			if ref.Name == name {
+				payload := manifest.AgentRef{Name: name, Registry: ref.Registry, Path: ref.Path}
+				return ResourceDetailResult{
+					Kind:      resType,
+					Name:      name,
+					Installed: false,
+					Registry:  ref.Registry,
+					Path:      ref.Path,
+					Payload:   payload,
+				}, nil
+			}
+		}
+		return ResourceDetailResult{}, fmt.Errorf("agent not found: %s", name)
+	case ResourceInstructions:
+		if merged != nil {
+			for _, inst := range merged.Instructions {
+				if inst.Name == name {
+					return ResourceDetailResult{
+						Kind:      resType,
+						Name:      name,
+						Installed: true,
+						Registry:  inst.Registry,
+						Path:      inst.Path,
+						Payload:   inst,
+					}, nil
+				}
+			}
+		}
+		for _, ref := range collectRegistryResourceItems(merged, resType) {
+			if ref.Name == name {
+				payload := manifest.InstructionRef{Name: name, Registry: ref.Registry, Path: ref.Path}
+				return ResourceDetailResult{
+					Kind:      resType,
+					Name:      name,
+					Installed: false,
+					Registry:  ref.Registry,
+					Path:      ref.Path,
+					Payload:   payload,
+				}, nil
+			}
+		}
+		return ResourceDetailResult{}, fmt.Errorf("instruction not found: %s", name)
+	default:
+		return ResourceDetailResult{}, fmt.Errorf("unknown resource type %q", kind)
+	}
 }
 
 type registryResourceItem struct {
@@ -594,6 +734,30 @@ func buildInstalledSkillsMap(merged *manifest.Manifest) map[string]bool {
 		}
 	}
 	return installed
+}
+
+func hasInstalledSkill(merged *manifest.Manifest, name string) bool {
+	if merged == nil {
+		return false
+	}
+	for _, s := range merged.Skills {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func registryURLByName(merged *manifest.Manifest, name string) string {
+	if merged == nil {
+		return ""
+	}
+	for _, r := range merged.Registries {
+		if r.Name == name {
+			return r.URL
+		}
+	}
+	return ""
 }
 
 // --- Shell completion helpers ---

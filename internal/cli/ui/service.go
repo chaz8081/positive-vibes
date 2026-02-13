@@ -19,11 +19,6 @@ const (
 	resourceKindInstructions = "instructions"
 )
 
-type resourceRow struct {
-	Name      string
-	Installed bool
-}
-
 type ResourceDetail struct {
 	Kind        string
 	Name        string
@@ -34,13 +29,47 @@ type ResourceDetail struct {
 	Payload     any
 }
 
+type ResourceRow struct {
+	Name      string
+	Installed bool
+}
+
+type ResourceServiceBridge struct {
+	ListAvailableRows func(projectDir, globalPath, kind string) ([]ResourceRow, error)
+	ListInstalledRows func(projectDir, globalPath, kind string) ([]ResourceRow, error)
+	ShowResource      func(projectDir, globalPath, kind, name string) (ResourceDetail, error)
+	MergeRows         func(available, installed []ResourceRow) []ResourceRow
+}
+
+var resourceServiceBridge = ResourceServiceBridge{
+	ListAvailableRows: listAvailableRows,
+	ListInstalledRows: listInstalledRows,
+	ShowResource:      showResourceDetail,
+	MergeRows:         mergeResourceRows,
+}
+
+func ConfigureResourceServiceBridge(bridge ResourceServiceBridge) {
+	if bridge.ListAvailableRows != nil {
+		resourceServiceBridge.ListAvailableRows = bridge.ListAvailableRows
+	}
+	if bridge.ListInstalledRows != nil {
+		resourceServiceBridge.ListInstalledRows = bridge.ListInstalledRows
+	}
+	if bridge.ShowResource != nil {
+		resourceServiceBridge.ShowResource = bridge.ShowResource
+	}
+	if bridge.MergeRows != nil {
+		resourceServiceBridge.MergeRows = bridge.MergeRows
+	}
+}
+
 type Service struct {
 	deps serviceDeps
 }
 
 type serviceDeps struct {
-	listAvailable func(kind string) ([]resourceRow, error)
-	listInstalled func(kind string) ([]resourceRow, error)
+	listAvailable func(kind string) ([]ResourceRow, error)
+	listInstalled func(kind string) ([]ResourceRow, error)
 	showDetail    func(kind, name string) (ResourceDetail, error)
 	install       func(kind string, names []string) error
 	remove        func(kind string, names []string) error
@@ -53,14 +82,14 @@ func NewService(projectDir string) *Service {
 	globalPath := defaultGlobalManifestPath()
 
 	return newServiceWithDeps(serviceDeps{
-		listAvailable: func(kind string) ([]resourceRow, error) {
-			return listAvailableRows(projectDir, globalPath, kind)
+		listAvailable: func(kind string) ([]ResourceRow, error) {
+			return resourceServiceBridge.ListAvailableRows(projectDir, globalPath, kind)
 		},
-		listInstalled: func(kind string) ([]resourceRow, error) {
-			return listInstalledRows(projectDir, globalPath, kind)
+		listInstalled: func(kind string) ([]ResourceRow, error) {
+			return resourceServiceBridge.ListInstalledRows(projectDir, globalPath, kind)
 		},
 		showDetail: func(kind, name string) (ResourceDetail, error) {
-			return showResourceDetail(projectDir, globalPath, kind, name)
+			return resourceServiceBridge.ShowResource(projectDir, globalPath, kind, name)
 		},
 		install: func(kind string, names []string) error {
 			return installResources(projectDir, globalPath, kind, names)
@@ -75,7 +104,7 @@ func newServiceWithDeps(deps serviceDeps) *Service {
 	return &Service{deps: deps}
 }
 
-func (s *Service) ListResources(kind string) ([]resourceRow, error) {
+func (s *Service) ListResources(kind string) ([]ResourceRow, error) {
 	if err := validateKind(kind); err != nil {
 		return nil, err
 	}
@@ -89,27 +118,31 @@ func (s *Service) ListResources(kind string) ([]resourceRow, error) {
 		return nil, err
 	}
 
-	byName := make(map[string]resourceRow, len(available)+len(installed))
+	rows := resourceServiceBridge.MergeRows(available, installed)
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+
+	return rows, nil
+}
+
+func mergeResourceRows(available, installed []ResourceRow) []ResourceRow {
+	byName := make(map[string]ResourceRow, len(available)+len(installed))
 	for _, row := range available {
 		if row.Name == "" {
 			continue
 		}
-		byName[row.Name] = resourceRow{Name: row.Name, Installed: false}
+		byName[row.Name] = ResourceRow{Name: row.Name, Installed: false}
 	}
 	for _, row := range installed {
 		if row.Name == "" {
 			continue
 		}
-		byName[row.Name] = resourceRow{Name: row.Name, Installed: true}
+		byName[row.Name] = ResourceRow{Name: row.Name, Installed: true}
 	}
-
-	rows := make([]resourceRow, 0, len(byName))
+	rows := make([]ResourceRow, 0, len(byName))
 	for _, row := range byName {
 		rows = append(rows, row)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
-
-	return rows, nil
+	return rows
 }
 
 func (s *Service) ShowResource(kind, name string) (ResourceDetail, error) {
@@ -145,13 +178,13 @@ func validateKind(kind string) error {
 	}
 }
 
-func listAvailableRows(projectDir, globalPath, kind string) ([]resourceRow, error) {
+func listAvailableRows(projectDir, globalPath, kind string) ([]ResourceRow, error) {
 	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
 
 	switch kind {
 	case resourceKindSkills:
 		seen := make(map[string]bool)
-		var rows []resourceRow
+		var rows []ResourceRow
 		for _, src := range buildAllSources(merged) {
 			names, err := src.List()
 			if err != nil {
@@ -162,15 +195,15 @@ func listAvailableRows(projectDir, globalPath, kind string) ([]resourceRow, erro
 					continue
 				}
 				seen[name] = true
-				rows = append(rows, resourceRow{Name: name})
+				rows = append(rows, ResourceRow{Name: name})
 			}
 		}
 		return rows, nil
 	case resourceKindAgents, resourceKindInstructions:
 		refs := collectRegistryResourceItems(merged, kind)
-		rows := make([]resourceRow, 0, len(refs))
+		rows := make([]ResourceRow, 0, len(refs))
 		for _, ref := range refs {
-			rows = append(rows, resourceRow{Name: ref.Name})
+			rows = append(rows, ResourceRow{Name: ref.Name})
 		}
 		return rows, nil
 	default:
@@ -178,7 +211,7 @@ func listAvailableRows(projectDir, globalPath, kind string) ([]resourceRow, erro
 	}
 }
 
-func listInstalledRows(projectDir, globalPath, kind string) ([]resourceRow, error) {
+func listInstalledRows(projectDir, globalPath, kind string) ([]ResourceRow, error) {
 	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
 	if merged == nil {
 		return nil, nil
@@ -186,21 +219,21 @@ func listInstalledRows(projectDir, globalPath, kind string) ([]resourceRow, erro
 
 	switch kind {
 	case resourceKindSkills:
-		rows := make([]resourceRow, 0, len(merged.Skills))
+		rows := make([]ResourceRow, 0, len(merged.Skills))
 		for _, s := range merged.Skills {
-			rows = append(rows, resourceRow{Name: s.Name, Installed: true})
+			rows = append(rows, ResourceRow{Name: s.Name, Installed: true})
 		}
 		return rows, nil
 	case resourceKindAgents:
-		rows := make([]resourceRow, 0, len(merged.Agents))
+		rows := make([]ResourceRow, 0, len(merged.Agents))
 		for _, a := range merged.Agents {
-			rows = append(rows, resourceRow{Name: a.Name, Installed: true})
+			rows = append(rows, ResourceRow{Name: a.Name, Installed: true})
 		}
 		return rows, nil
 	case resourceKindInstructions:
-		rows := make([]resourceRow, 0, len(merged.Instructions))
+		rows := make([]ResourceRow, 0, len(merged.Instructions))
 		for _, i := range merged.Instructions {
-			rows = append(rows, resourceRow{Name: i.Name, Installed: true})
+			rows = append(rows, ResourceRow{Name: i.Name, Installed: true})
 		}
 		return rows, nil
 	default:
