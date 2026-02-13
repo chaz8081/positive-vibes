@@ -40,6 +40,12 @@ func (m model) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left, body, footer, "", install)
 	}
 
+	if m.showRemoveModal {
+		removeWidth := contentWidthForStyle(width, helpStyle)
+		remove := m.renderRemoveModal(removeWidth)
+		return lipgloss.JoinVertical(lipgloss.Left, body, footer, "", remove)
+	}
+
 	if m.showHelp {
 		helpWidth := contentWidthForStyle(width, helpStyle)
 		help := helpStyle.Width(helpWidth).Render("Help\n- left/right: switch rail\n- up/down: move cursor\n- esc: close help")
@@ -102,6 +108,30 @@ func (m model) renderInstallModal(width int) string {
 	return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
+func (m model) renderRemoveModal(width int) string {
+	lines := []string{"Remove resources", "- space: toggle  enter: confirm  esc: cancel", ""}
+	if len(m.removeChoices) == 0 {
+		lines = append(lines, mutedStyle.Render("No resources available to remove."))
+		return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
+	}
+
+	for i, row := range m.removeChoices {
+		marker := "[ ]"
+		if m.removeSelected[row.Name] {
+			marker = "[x]"
+		}
+		line := marker + " " + row.Name
+		if i == m.removeCursor {
+			line = highlightStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		lines = append(lines, line)
+	}
+
+	return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
+}
+
 func (m model) layoutWidths(totalWidth int) (rail int, list int, preview int, stacked bool) {
 	frame := styleFrameWidth(panelStyle)
 	if totalWidth < (frame*3)+30 {
@@ -147,7 +177,7 @@ func (m model) footerText() string {
 		installKey = keys[0]
 	}
 
-	text := "left/right: rail  up/down: move  " + installKey + ": install  ?: help"
+	text := "left/right: rail  up/down: move  " + installKey + ": install  r: remove  ?: help"
 	if m.statusMessage == "" {
 		return text
 	}

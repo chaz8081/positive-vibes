@@ -21,6 +21,7 @@ type model struct {
 	cursor           int
 	showHelp         bool
 	showInstallModal bool
+	showRemoveModal  bool
 	statusMessage    string
 	width            int
 	rows             []ResourceRow
@@ -30,9 +31,13 @@ type model struct {
 	installCursor   int
 	installChoices  []ResourceRow
 	installSelected map[string]bool
+	removeCursor    int
+	removeChoices   []ResourceRow
+	removeSelected  map[string]bool
 
 	listResources    func(kind string) ([]ResourceRow, error)
 	installResources func(kind string, names []string) error
+	removeResources  func(kind string, names []string) error
 }
 
 func newModel() model {
@@ -47,11 +52,13 @@ func newModel() model {
 		cursor:           0,
 		showHelp:         false,
 		showInstallModal: false,
+		showRemoveModal:  false,
 		width:            96,
 		rows:             rows,
 		items:            []string{"placeholder-1", "placeholder-2", "placeholder-3"},
 		keys:             defaultKeyMap(),
 		installSelected:  make(map[string]bool),
+		removeSelected:   make(map[string]bool),
 	}
 }
 
@@ -64,6 +71,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 	case tea.KeyMsg:
+		if m.showRemoveModal {
+			switch {
+			case key.Matches(msg, m.keys.CloseHelp):
+				m.closeRemoveModal()
+			case key.Matches(msg, m.keys.CursorDown):
+				if m.removeCursor < len(m.removeChoices)-1 {
+					m.removeCursor++
+				}
+			case key.Matches(msg, m.keys.CursorUp):
+				if m.removeCursor > 0 {
+					m.removeCursor--
+				}
+			case msg.Type == tea.KeySpace:
+				m.toggleRemoveSelection()
+			case msg.Type == tea.KeyEnter:
+				m.confirmRemoveSelection()
+			}
+			return m, nil
+		}
+
 		if m.showInstallModal {
 			switch {
 			case key.Matches(msg, m.keys.CloseHelp):
@@ -98,6 +125,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if key.Matches(msg, m.keys.Install) {
 			m.openInstallModal()
+			return m, nil
+		}
+
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'r' {
+			m.openRemoveModal()
 			return m, nil
 		}
 
@@ -149,6 +181,73 @@ func (m *model) closeInstallModal() {
 	m.installCursor = 0
 	m.installChoices = nil
 	m.installSelected = make(map[string]bool)
+}
+
+func (m *model) openRemoveModal() {
+	if !m.refreshRowsForActiveRail() {
+		m.closeRemoveModal()
+		return
+	}
+
+	m.removeChoices = m.removeChoices[:0]
+	for _, row := range m.rows {
+		if row.Installed {
+			m.removeChoices = append(m.removeChoices, row)
+		}
+	}
+
+	if len(m.removeChoices) == 0 {
+		m.statusMessage = fmt.Sprintf("no removable resources in %s", m.activeKind())
+		m.closeRemoveModal()
+		return
+	}
+
+	m.removeCursor = 0
+	m.removeSelected = make(map[string]bool)
+	m.showRemoveModal = true
+}
+
+func (m *model) closeRemoveModal() {
+	m.showRemoveModal = false
+	m.removeCursor = 0
+	m.removeChoices = nil
+	m.removeSelected = make(map[string]bool)
+}
+
+func (m *model) toggleRemoveSelection() {
+	if len(m.removeChoices) == 0 || m.removeCursor < 0 || m.removeCursor >= len(m.removeChoices) {
+		return
+	}
+
+	name := m.removeChoices[m.removeCursor].Name
+	if m.removeSelected[name] {
+		delete(m.removeSelected, name)
+		return
+	}
+	m.removeSelected[name] = true
+}
+
+func (m *model) confirmRemoveSelection() {
+	selected := m.selectedRemoveNames()
+	if len(selected) == 0 {
+		m.statusMessage = "select at least one resource to remove"
+		return
+	}
+
+	if m.removeResources != nil {
+		if err := m.removeResources(m.activeKind(), selected); err != nil {
+			m.statusMessage = fmt.Sprintf("remove failed: %v", err)
+			return
+		}
+	}
+
+	if !m.refreshRowsForActiveRail() {
+		m.closeRemoveModal()
+		return
+	}
+
+	m.statusMessage = fmt.Sprintf("removed: %s", strings.Join(selected, ", "))
+	m.closeRemoveModal()
 }
 
 func (m *model) toggleInstallSelection() {
@@ -219,6 +318,16 @@ func (m model) selectedInstallNames() []string {
 	names := make([]string, 0, len(m.installSelected))
 	for _, row := range m.installChoices {
 		if m.installSelected[row.Name] {
+			names = append(names, row.Name)
+		}
+	}
+	return names
+}
+
+func (m model) selectedRemoveNames() []string {
+	names := make([]string, 0, len(m.removeSelected))
+	for _, row := range m.removeChoices {
+		if m.removeSelected[row.Name] {
 			names = append(names, row.Name)
 		}
 	}
