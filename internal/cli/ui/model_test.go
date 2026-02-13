@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"reflect"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -122,6 +123,49 @@ func TestModel_VimNavigationBindings(t *testing.T) {
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	if m.cursor != 0 {
 		t.Fatalf("expected k to move cursor up, got %d", m.cursor)
+	}
+}
+
+func TestModel_RailSwitchRefreshesRowsImmediately(t *testing.T) {
+	m := newModel()
+
+	var gotKinds []string
+	m.listResources = func(kind string) ([]ResourceRow, error) {
+		gotKinds = append(gotKinds, kind)
+		switch kind {
+		case resourceKindSkills:
+			return []ResourceRow{{Name: "skill-1", Installed: true}}, nil
+		case resourceKindInstructions:
+			return []ResourceRow{{Name: "instruction-1", Installed: false}}, nil
+		default:
+			return nil, nil
+		}
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.activeRail != railInstructions {
+		t.Fatalf("expected active rail instructions after right, got %v", m.activeRail)
+	}
+	if len(m.rows) != 1 || m.rows[0].Name != "instruction-1" {
+		t.Fatalf("expected instruction rows after right, got %#v", m.rows)
+	}
+	if !reflect.DeepEqual(m.items, []string{"instruction-1"}) {
+		t.Fatalf("expected instruction items after right, got %#v", m.items)
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.activeRail != railSkills {
+		t.Fatalf("expected active rail skills after left, got %v", m.activeRail)
+	}
+	if len(m.rows) != 1 || m.rows[0].Name != "skill-1" {
+		t.Fatalf("expected skill rows after left, got %#v", m.rows)
+	}
+	if !reflect.DeepEqual(m.items, []string{"skill-1"}) {
+		t.Fatalf("expected skill items after left, got %#v", m.items)
+	}
+
+	if !reflect.DeepEqual(gotKinds, []string{resourceKindInstructions, resourceKindSkills}) {
+		t.Fatalf("expected refresh per rail switch, got kinds %#v", gotKinds)
 	}
 }
 

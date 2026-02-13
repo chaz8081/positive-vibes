@@ -27,7 +27,7 @@ Manage Agent Skills and Instructions from a single source of truth
 		// Default action launches TUI for interactive terminals and falls back to help otherwise.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if isInteractiveTTY() {
-				return launchUI()
+				return launchUI(projectDir)
 			}
 			return cmd.Help()
 		},

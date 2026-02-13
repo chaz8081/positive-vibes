@@ -112,15 +112,22 @@ func TestRootNoArgs_TTYLaunchesUISuccessfully(t *testing.T) {
 	originalHelpFn := rootCmd.HelpFunc()
 	originalLaunchUI := launchUI
 	originalIsInteractiveTTY := isInteractiveTTY
+	originalProjectDir := projectDir
 	t.Cleanup(func() {
 		rootCmd.SetHelpFunc(originalHelpFn)
 		launchUI = originalLaunchUI
 		isInteractiveTTY = originalIsInteractiveTTY
+		projectDir = originalProjectDir
 	})
 
+	wantProjectDir := t.TempDir()
+	projectDir = wantProjectDir
+
 	calledLaunchUI := false
-	launchUI = func() error {
+	gotProjectDir := ""
+	launchUI = func(projectDir string) error {
 		calledLaunchUI = true
+		gotProjectDir = projectDir
 		return nil
 	}
 
@@ -138,6 +145,7 @@ func TestRootNoArgs_TTYLaunchesUISuccessfully(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, calledLaunchUI)
+	assert.Equal(t, wantProjectDir, gotProjectDir)
 	assert.False(t, helpCalled)
 }
 
@@ -152,7 +160,7 @@ func TestRootNoArgs_NonTTYShowsHelp(t *testing.T) {
 	})
 
 	launchCalled := false
-	launchUI = func() error {
+	launchUI = func(projectDir string) error {
 		launchCalled = true
 		return nil
 	}
@@ -186,7 +194,7 @@ func TestRootNoArgs_TTYLaunchFailureReturnsError(t *testing.T) {
 
 	launchErr := errors.New("boom")
 	launchCalled := false
-	launchUI = func() error {
+	launchUI = func(projectDir string) error {
 		launchCalled = true
 		return launchErr
 	}

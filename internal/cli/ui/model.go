@@ -152,8 +152,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.LeftRail):
 			m.activeRail = m.wrapRail(-1)
+			m.refreshRowsForActiveRail()
 		case key.Matches(msg, m.keys.RightRail):
 			m.activeRail = m.wrapRail(1)
+			m.refreshRowsForActiveRail()
 		case key.Matches(msg, m.keys.CursorDown):
 			if m.cursor < len(m.items)-1 {
 				m.cursor++

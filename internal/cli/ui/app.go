@@ -29,8 +29,8 @@ func newRuntimeModel(projectDir string) model {
 	return m
 }
 
-func Run() error {
-	p := tea.NewProgram(newRuntimeModel("."))
+func Run(projectDir string) error {
+	p := tea.NewProgram(newRuntimeModel(projectDir))
 	_, err := p.Run()
 	return err
 }
