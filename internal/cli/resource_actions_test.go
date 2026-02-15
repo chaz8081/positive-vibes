@@ -81,3 +81,24 @@ func readResourceActionManifest(t *testing.T, projectDir string) *manifest.Manif
 	}
 	return m
 }
+
+func TestEnsureRegistryRefInManifest_AddsMissingRegistryFromMerged(t *testing.T) {
+	m := &manifest.Manifest{}
+	merged := &manifest.Manifest{Registries: []manifest.RegistryRef{{
+		Name:  "awesome-copilot",
+		URL:   "https://github.com/github/awesome-copilot",
+		Ref:   "latest",
+		Paths: map[string]string{"skills": "skills/"},
+	}}}
+
+	ensureRegistryRefInManifest(m, merged, "awesome-copilot")
+	if len(m.Registries) != 1 {
+		t.Fatalf("expected one registry added, got %#v", m.Registries)
+	}
+	if m.Registries[0].Name != "awesome-copilot" {
+		t.Fatalf("expected added registry awesome-copilot, got %#v", m.Registries[0])
+	}
+	if m.Registries[0].Paths["skills"] != "skills/" || m.Registries[0].Paths["instructions"] != "skills/" || m.Registries[0].Paths["agents"] != "skills/" {
+		t.Fatalf("expected registry paths to share skills root, got %#v", m.Registries[0].Paths)
+	}
+}

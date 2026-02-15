@@ -37,9 +37,14 @@ Manage Agent Skills and Instructions from a single source of truth
 	verbose          bool
 	launchUI         = ui.Run
 	isInteractiveTTY = func() bool {
-		return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+		return shouldLaunchTUI(term.IsTerminal(int(os.Stdin.Fd())), term.IsTerminal(int(os.Stdout.Fd())))
 	}
 )
+
+func shouldLaunchTUI(stdinIsTerminal, stdoutIsTerminal bool) bool {
+	_ = stdinIsTerminal
+	return stdoutIsTerminal
+}
 
 func init() {
 	// Persistent flags

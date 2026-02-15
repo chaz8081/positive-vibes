@@ -46,6 +46,10 @@ func TestNewRuntimeModel_WiresServiceCallbacks(t *testing.T) {
 
 	m.cursor = 0
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.screen != screenBrowser {
+		t.Fatal("expected enter on home to open browser")
+	}
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if !m.showDetailModal {
 		t.Fatal("expected show modal to open from wired service")
 	}
@@ -78,6 +82,10 @@ func TestNewRuntimeModel_ServiceInitFailureFallsBackGracefully(t *testing.T) {
 	}
 
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.screen != screenBrowser {
+		t.Fatal("expected enter on home to open browser")
+	}
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.showDetailModal {
 		t.Fatal("expected show action to stay closed when backend is unavailable")
 	}
@@ -85,12 +93,7 @@ func TestNewRuntimeModel_ServiceInitFailureFallsBackGracefully(t *testing.T) {
 		t.Fatalf("expected unavailable backend status for show, got %q", m.statusMessage)
 	}
 
-	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
-	if !m.showInstallModal {
-		t.Fatal("expected install modal to open so selection flow can run")
-	}
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
-	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if !strings.Contains(m.statusMessage, "backend unavailable") {
 		t.Fatalf("expected unavailable backend status for install, got %q", m.statusMessage)
 	}
@@ -98,14 +101,8 @@ func TestNewRuntimeModel_ServiceInitFailureFallsBackGracefully(t *testing.T) {
 		t.Fatalf("expected degraded install to avoid success status, got %q", m.statusMessage)
 	}
 
-	m.closeInstallModal()
 	m.setRows([]ResourceRow{{Name: "alpha", Installed: true}})
-	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	if !m.showRemoveModal {
-		t.Fatal("expected remove modal to open so selection flow can run")
-	}
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
-	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if !strings.Contains(m.statusMessage, "backend unavailable") {
 		t.Fatalf("expected unavailable backend status for remove, got %q", m.statusMessage)
 	}

@@ -2,9 +2,12 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/chaz8081/positive-vibes/pkg/schema"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -37,11 +40,11 @@ func TestParseResourceType_Invalid(t *testing.T) {
 
 func TestMergeResourceItems_InstalledWins(t *testing.T) {
 	available := []ResourceItem{
-		{Name: "code-review", Installed: false},
-		{Name: "tdd", Installed: false},
+		{Name: "code-review", Installed: false, InstallScope: installScopeNone},
+		{Name: "tdd", Installed: false, InstallScope: installScopeNone},
 	}
 	installed := []ResourceItem{
-		{Name: "code-review", Installed: true},
+		{Name: "code-review", Installed: true, InstallScope: installScopeBoth},
 	}
 
 	merged := MergeResourceItems(available, installed)
@@ -52,7 +55,9 @@ func TestMergeResourceItems_InstalledWins(t *testing.T) {
 	}
 	assert.Len(t, byName, 2)
 	assert.True(t, byName["code-review"].Installed)
+	assert.Equal(t, installScopeBoth, byName["code-review"].InstallScope)
 	assert.False(t, byName["tdd"].Installed)
+	assert.Equal(t, installScopeNone, byName["tdd"].InstallScope)
 }
 
 // --- registrySkillSet tests ---
@@ -611,3 +616,218 @@ func TestShowCmd_HasValidArgsFunction(t *testing.T) {
 func TestRemoveCmd_HasValidArgsFunction(t *testing.T) {
 	assert.NotNil(t, removeCmd.ValidArgsFunction, "remove command should have ValidArgsFunction set")
 }
+
+func TestResource_ShowSkillDetail_IncludesAdditionalFiles(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "examples"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("# Skill\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "examples", "sample.md"), []byte("sample\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "zeta.txt"), []byte("z\n"), 0o644))
+
+	files := collectLocalFiles(root)
+	require.Len(t, files, 3)
+	assert.Equal(t, "SKILL.md", files[0]["name"])
+	assert.Equal(t, "examples/sample.md", files[1]["name"])
+	assert.Equal(t, "zeta.txt", files[2]["name"])
+}
+
+func TestResource_ShowSkillDetail_PathMayPointToSkillFile(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "examples"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("# Skill\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "examples", "sample.md"), []byte("sample\n"), 0o644))
+
+	files := collectLocalFiles(filepath.Join(root, "SKILL.md"))
+	require.Len(t, files, 2)
+	assert.Equal(t, "SKILL.md", files[0]["name"])
+	assert.Equal(t, "examples/sample.md", files[1]["name"])
+}
+
+func TestCollectSkillPreviewFilesFromRegistrySource_IncludesNestedFiles(t *testing.T) {
+	src := fakeRegistrySource{
+		name: "embedded",
+		resourceFiles: []string{
+			"excalidraw-diagram-generator/SKILL.md",
+			"excalidraw-diagram-generator/references/README.md",
+			"excalidraw-diagram-generator/scripts/render.sh",
+			"other-skill/SKILL.md",
+		},
+		resourceContent: map[string][]byte{
+			"excalidraw-diagram-generator/SKILL.md":             []byte("# Skill"),
+			"excalidraw-diagram-generator/references/README.md": []byte("refs"),
+			"excalidraw-diagram-generator/scripts/render.sh":    []byte("#!/bin/sh"),
+			"other-skill/SKILL.md":                              []byte("ignore"),
+		},
+	}
+
+	files := collectSkillPreviewFilesFromRegistrySource(src, "excalidraw-diagram-generator")
+	require.Len(t, files, 3)
+	assert.Equal(t, "SKILL.md", files[0]["name"])
+	assert.Equal(t, "references/README.md", files[1]["name"])
+	assert.Equal(t, "scripts/render.sh", files[2]["name"])
+}
+
+func TestListAvailableResourceItems_TargetsUsesValidTargets(t *testing.T) {
+	items, err := ListAvailableResourceItems(t.TempDir(), filepath.Join(t.TempDir(), "missing.yaml"), "targets")
+	require.NoError(t, err)
+	require.Len(t, items, len(manifest.ValidTargets))
+
+	got := make(map[string]bool, len(items))
+	for _, item := range items {
+		got[item.Name] = true
+	}
+	for _, targetName := range manifest.ValidTargets {
+		if !got[targetName] {
+			t.Fatalf("expected available targets to include %q, got %#v", targetName, items)
+		}
+	}
+}
+
+func TestInstallAndRemoveResourceItems_TargetsMutateProjectManifest(t *testing.T) {
+	projectDir := t.TempDir()
+	globalPath := filepath.Join(t.TempDir(), "global-vibes.yaml")
+
+	installReport, err := InstallResourceItemsWithReport(projectDir, globalPath, "targets", []string{"cursor"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cursor"}, installReport.MutatedNames)
+
+	m, _, err := manifest.LoadManifestFromProject(projectDir)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cursor"}, m.Targets)
+
+	removeReport, err := RemoveResourceItemsWithReport(projectDir, "targets", []string{"cursor"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cursor"}, removeReport.MutatedNames)
+
+	m, _, err = manifest.LoadManifestFromProject(projectDir)
+	require.NoError(t, err)
+	assert.Len(t, m.Targets, 0)
+}
+
+func TestListAvailableResourceItems_RegistriesIncludesMerged(t *testing.T) {
+	projectDir := t.TempDir()
+	globalPath := filepath.Join(t.TempDir(), "global-vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte(`registries:
+  - name: awesome-copilot
+    url: https://github.com/github/awesome-copilot
+    ref: latest
+`), 0o644))
+
+	items, err := ListAvailableResourceItems(projectDir, globalPath, "registries")
+	require.NoError(t, err)
+	assert.NotEmpty(t, items)
+	assert.Equal(t, "awesome-copilot", items[0].Name)
+}
+
+func TestInstallAndRemoveResourceItems_RegistriesMutateProjectManifest(t *testing.T) {
+	projectDir := t.TempDir()
+	globalPath := filepath.Join(t.TempDir(), "global-vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte(`registries:
+  - name: awesome-copilot
+    url: https://github.com/github/awesome-copilot
+    ref: latest
+`), 0o644))
+
+	installReport, err := InstallResourceItemsWithReport(projectDir, globalPath, "registries", []string{"awesome-copilot"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"awesome-copilot"}, installReport.MutatedNames)
+
+	m, _, err := manifest.LoadManifestFromProject(projectDir)
+	require.NoError(t, err)
+	require.Len(t, m.Registries, 1)
+	assert.Equal(t, "awesome-copilot", m.Registries[0].Name)
+	assert.Equal(t, "skills/", m.Registries[0].Paths["skills"])
+	assert.Equal(t, "skills/", m.Registries[0].Paths["instructions"])
+	assert.Equal(t, "skills/", m.Registries[0].Paths["agents"])
+
+	removeReport, err := RemoveResourceItemsWithReport(projectDir, "registries", []string{"awesome-copilot"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"awesome-copilot"}, removeReport.MutatedNames)
+
+	m, _, err = manifest.LoadManifestFromProject(projectDir)
+	require.NoError(t, err)
+	assert.Len(t, m.Registries, 0)
+}
+
+func TestListInstalledResourceItems_ScopeLocalGlobalBoth(t *testing.T) {
+	configDir := t.TempDir()
+	globalPath := filepath.Join(configDir, "global-vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte("skills:\n  - name: global-only\n  - name: both\n"), 0o644))
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "vibes.yaml"), []byte("skills:\n  - name: local-only\n  - name: both\n"), 0o644))
+
+	items, err := ListInstalledResourceItems(projectDir, globalPath, "skills")
+	require.NoError(t, err)
+
+	byName := map[string]ResourceItem{}
+	for _, item := range items {
+		byName[item.Name] = item
+	}
+	assert.Equal(t, installScopeLocal, byName["local-only"].InstallScope)
+	assert.Equal(t, installScopeGlobal, byName["global-only"].InstallScope)
+	assert.Equal(t, installScopeBoth, byName["both"].InstallScope)
+}
+
+func TestShowResourceDetail_RegistryIncludesEffectivePaths(t *testing.T) {
+	projectDir := t.TempDir()
+	globalPath := filepath.Join(t.TempDir(), "global-vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte(`registries:
+  - name: awesome-copilot
+    url: https://github.com/github/awesome-copilot
+    ref: latest
+    paths:
+      skills: skills/
+`), 0o644))
+
+	detail, err := ShowResourceDetail(projectDir, globalPath, "registries", "awesome-copilot")
+	require.NoError(t, err)
+	payload, ok := detail.Payload.(map[string]any)
+	require.True(t, ok)
+	content, ok := payload["content"].(string)
+	require.True(t, ok)
+	assert.Contains(t, content, "skills: skills/")
+	assert.Contains(t, content, "instructions: skills/ (inherited)")
+	assert.Contains(t, content, "agents: skills/ (inherited)")
+}
+
+type fakeRegistrySource struct {
+	name            string
+	resourceFiles   []string
+	resourceContent map[string][]byte
+}
+
+func (f fakeRegistrySource) Name() string { return f.name }
+
+func (f fakeRegistrySource) Fetch(name string) (*schema.Skill, string, error) {
+	return &schema.Skill{Name: name}, name, nil
+}
+
+func (f fakeRegistrySource) List() ([]string, error) { return nil, nil }
+
+func (f fakeRegistrySource) FetchFile(skillName, relPath string) ([]byte, error) {
+	key := filepath.ToSlash(filepath.Join(skillName, relPath))
+	return f.resourceContent[key], nil
+}
+
+func (f fakeRegistrySource) ListFiles(skillName, relDir string) ([]string, error) {
+	_ = skillName
+	_ = relDir
+	return nil, nil
+}
+
+func (f fakeRegistrySource) FetchResourceFile(kind, relPath string) ([]byte, error) {
+	if kind != "skills" {
+		return nil, nil
+	}
+	return f.resourceContent[filepath.ToSlash(relPath)], nil
+}
+
+func (f fakeRegistrySource) ListResourceFiles(kind string) ([]string, error) {
+	if kind != "skills" {
+		return nil, nil
+	}
+	return f.resourceFiles, nil
+}
+
+var _ registry.ResourceSource = fakeRegistrySource{}

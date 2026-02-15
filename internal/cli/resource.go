@@ -3,7 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
@@ -19,17 +21,19 @@ const (
 	ResourceSkills       ResourceType = "skills"
 	ResourceAgents       ResourceType = "agents"
 	ResourceInstructions ResourceType = "instructions"
+	ResourceTargets      ResourceType = "targets"
+	ResourceRegistries   ResourceType = "registries"
 )
 
 // ValidResourceTypes returns the list of supported resource type strings.
 func ValidResourceTypes() []string {
-	return []string{string(ResourceSkills), string(ResourceAgents), string(ResourceInstructions)}
+	return []string{string(ResourceSkills), string(ResourceAgents), string(ResourceInstructions), string(ResourceTargets), string(ResourceRegistries)}
 }
 
 // ParseResourceType validates and returns a ResourceType from a string.
 func ParseResourceType(s string) (ResourceType, error) {
 	switch ResourceType(s) {
-	case ResourceSkills, ResourceAgents, ResourceInstructions:
+	case ResourceSkills, ResourceAgents, ResourceInstructions, ResourceTargets, ResourceRegistries:
 		return ResourceType(s), nil
 	default:
 		return "", fmt.Errorf("unknown resource type %q (valid: %s)", s, strings.Join(ValidResourceTypes(), ", "))
@@ -41,9 +45,17 @@ func ParseResourceType(s string) (ResourceType, error) {
 // ResourceItem is a generic item with a name and optional metadata,
 // used to unify skills, agents, and instructions for list/show/install/remove.
 type ResourceItem struct {
-	Name      string
-	Installed bool
+	Name         string
+	Installed    bool
+	InstallScope string
 }
+
+const (
+	installScopeNone   = "none"
+	installScopeLocal  = "local"
+	installScopeGlobal = "global"
+	installScopeBoth   = "both"
+)
 
 // ResourceDetailResult describes a fully-resolved resource for show operations.
 type ResourceDetailResult struct {
@@ -65,6 +77,9 @@ func MergeResourceItems(available, installed []ResourceItem) []ResourceItem {
 			continue
 		}
 		item.Installed = false
+		if item.InstallScope == "" {
+			item.InstallScope = installScopeNone
+		}
 		byName[item.Name] = item
 	}
 	for _, item := range installed {
@@ -72,6 +87,9 @@ func MergeResourceItems(available, installed []ResourceItem) []ResourceItem {
 			continue
 		}
 		item.Installed = true
+		if item.InstallScope == "" {
+			item.InstallScope = installScopeLocal
+		}
 		byName[item.Name] = item
 	}
 
@@ -97,6 +115,10 @@ func ListAvailableResourceItems(projectDir, globalPath, kind string) ([]Resource
 		return collectAvailableAgents(merged), nil
 	case ResourceInstructions:
 		return collectAvailableInstructions(merged), nil
+	case ResourceTargets:
+		return collectAvailableTargets(merged), nil
+	case ResourceRegistries:
+		return collectAvailableRegistries(merged), nil
 	default:
 		return nil, fmt.Errorf("unknown resource type %q", kind)
 	}
@@ -109,14 +131,20 @@ func ListInstalledResourceItems(projectDir, globalPath, kind string) ([]Resource
 		return nil, err
 	}
 	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
+	local, _, _ := manifest.LoadManifestFromProject(projectDir)
+	global, _ := manifest.LoadManifest(globalPath)
 
 	switch resType {
 	case ResourceSkills:
-		return collectInstalledSkills(merged), nil
+		return collectInstalledSkillsWithScope(local, global, merged), nil
 	case ResourceAgents:
-		return collectAgents(merged), nil
+		return collectAgentsWithScope(local, global, merged), nil
 	case ResourceInstructions:
-		return collectInstructions(merged), nil
+		return collectInstructionsWithScope(local, global, merged), nil
+	case ResourceTargets:
+		return collectTargetsWithScope(local, global, merged), nil
+	case ResourceRegistries:
+		return collectInstalledRegistriesWithScope(local, global, merged), nil
 	default:
 		return nil, fmt.Errorf("unknown resource type %q", kind)
 	}
@@ -140,39 +168,59 @@ func ShowResourceDetail(projectDir, globalPath, kind, name string) (ResourceDeta
 		if err != nil {
 			return ResourceDetailResult{}, err
 		}
+		files := collectSkillPreviewFiles(projectDir, merged, name, regName)
+		payload := map[string]any{
+			"skill":       skill,
+			"description": skill.Description,
+			"content":     skill.Instructions,
+			"files":       files,
+		}
 		return ResourceDetailResult{
 			Kind:        resType,
 			Name:        name,
 			Installed:   hasInstalledSkill(merged, name),
 			Registry:    regName,
 			RegistryURL: registryURLByName(merged, regName),
-			Payload:     skill,
+			Payload:     payload,
 		}, nil
 	case ResourceAgents:
 		if merged != nil {
 			for _, a := range merged.Agents {
 				if a.Name == name {
+					content := loadResourceContent(projectDir, merged, string(resType), a.Registry, a.Path)
 					return ResourceDetailResult{
 						Kind:      resType,
 						Name:      name,
 						Installed: true,
 						Registry:  a.Registry,
 						Path:      a.Path,
-						Payload:   a,
+						Payload: map[string]any{
+							"name":        a.Name,
+							"path":        a.Path,
+							"registry":    a.Registry,
+							"description": "Agent instructions",
+							"content":     content,
+						},
 					}, nil
 				}
 			}
 		}
 		for _, ref := range collectRegistryResourceItems(merged, resType) {
 			if ref.Name == name {
-				payload := manifest.AgentRef{Name: name, Registry: ref.Registry, Path: ref.Path}
+				content := loadResourceContent(projectDir, merged, string(resType), ref.Registry, ref.Path)
 				return ResourceDetailResult{
 					Kind:      resType,
 					Name:      name,
 					Installed: false,
 					Registry:  ref.Registry,
 					Path:      ref.Path,
-					Payload:   payload,
+					Payload: map[string]any{
+						"name":        name,
+						"path":        ref.Path,
+						"registry":    ref.Registry,
+						"description": "Agent instructions",
+						"content":     content,
+					},
 				}, nil
 			}
 		}
@@ -181,34 +229,305 @@ func ShowResourceDetail(projectDir, globalPath, kind, name string) (ResourceDeta
 		if merged != nil {
 			for _, inst := range merged.Instructions {
 				if inst.Name == name {
+					content := inst.Content
+					if content == "" {
+						content = loadResourceContent(projectDir, merged, string(resType), inst.Registry, inst.Path)
+					}
 					return ResourceDetailResult{
 						Kind:      resType,
 						Name:      name,
 						Installed: true,
 						Registry:  inst.Registry,
 						Path:      inst.Path,
-						Payload:   inst,
+						Payload: map[string]any{
+							"name":        inst.Name,
+							"path":        inst.Path,
+							"registry":    inst.Registry,
+							"description": "Instruction content",
+							"content":     content,
+						},
 					}, nil
 				}
 			}
 		}
 		for _, ref := range collectRegistryResourceItems(merged, resType) {
 			if ref.Name == name {
-				payload := manifest.InstructionRef{Name: name, Registry: ref.Registry, Path: ref.Path}
+				content := loadResourceContent(projectDir, merged, string(resType), ref.Registry, ref.Path)
 				return ResourceDetailResult{
 					Kind:      resType,
 					Name:      name,
 					Installed: false,
 					Registry:  ref.Registry,
 					Path:      ref.Path,
-					Payload:   payload,
+					Payload: map[string]any{
+						"name":        name,
+						"path":        ref.Path,
+						"registry":    ref.Registry,
+						"description": "Instruction content",
+						"content":     content,
+					},
 				}, nil
 			}
 		}
 		return ResourceDetailResult{}, fmt.Errorf("instruction not found: %s", name)
+	case ResourceTargets:
+		if !contains(manifest.ValidTargets, name) {
+			return ResourceDetailResult{}, fmt.Errorf("target not found: %s", name)
+		}
+		installed := false
+		if merged != nil {
+			for _, t := range merged.Targets {
+				if t == name {
+					installed = true
+					break
+				}
+			}
+		}
+		return ResourceDetailResult{
+			Kind:      resType,
+			Name:      name,
+			Installed: installed,
+			Payload: map[string]any{
+				"name":        name,
+				"description": "Target platform",
+				"content":     fmt.Sprintf("Target: %s\nUse apply to sync skills/instructions/agents to this platform.", name),
+			},
+		}, nil
+	case ResourceRegistries:
+		if merged == nil {
+			return ResourceDetailResult{}, fmt.Errorf("registry not found: %s", name)
+		}
+		for _, reg := range merged.Registries {
+			if reg.Name == name {
+				return ResourceDetailResult{
+					Kind:      resType,
+					Name:      name,
+					Installed: true,
+					Registry:  reg.Name,
+					Payload: map[string]any{
+						"name":        reg.Name,
+						"description": "Registry source",
+						"content":     formatRegistryDetailContent(reg),
+					},
+				}, nil
+			}
+		}
+		return ResourceDetailResult{}, fmt.Errorf("registry not found: %s", name)
 	default:
 		return ResourceDetailResult{}, fmt.Errorf("unknown resource type %q", kind)
 	}
+}
+
+func formatRegistryDetailContent(reg manifest.RegistryRef) string {
+	skillsRoot := reg.Paths["skills"]
+	if skillsRoot == "" {
+		skillsRoot = "skills/"
+	}
+	instructionsRoot, instructionsExplicit := reg.Paths["instructions"]
+	if instructionsRoot == "" {
+		instructionsRoot = skillsRoot
+	}
+	agentsRoot, agentsExplicit := reg.Paths["agents"]
+	if agentsRoot == "" {
+		agentsRoot = skillsRoot
+	}
+
+	instructionsSuffix := ""
+	if !instructionsExplicit {
+		instructionsSuffix = " (inherited)"
+	}
+	agentsSuffix := ""
+	if !agentsExplicit {
+		agentsSuffix = " (inherited)"
+	}
+
+	return fmt.Sprintf("URL: %s\nRef: %s\n\npaths:\n- skills: %s\n- instructions: %s%s\n- agents: %s%s", reg.URL, reg.Ref, skillsRoot, instructionsRoot, instructionsSuffix, agentsRoot, agentsSuffix)
+}
+
+func loadResourceContent(projectDir string, merged *manifest.Manifest, kind, registryName, path string) string {
+	if path == "" {
+		return ""
+	}
+	if registryName == "" {
+		resolved := path
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(projectDir, resolved)
+		}
+		data, err := os.ReadFile(resolved)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(data))
+	}
+	for _, src := range gitRegistriesFromManifest(merged) {
+		if src.Name() != registryName {
+			continue
+		}
+		resourceSource, ok := src.(registry.ResourceSource)
+		if !ok {
+			return ""
+		}
+		data, err := resourceSource.FetchResourceFile(kind, path)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(data))
+	}
+	return ""
+}
+
+func collectSkillPreviewFiles(projectDir string, merged *manifest.Manifest, skillName, registryName string) []map[string]any {
+	skillRef := findSkillRefByName(merged, skillName)
+	skillDir := ""
+	if skillRef != nil && skillRef.Path != "" {
+		skillDir = skillRef.Path
+	} else {
+		skillDir = skillName
+	}
+
+	if registryName == "" {
+		resolved := skillDir
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(projectDir, resolved)
+		}
+		if strings.EqualFold(filepath.Base(resolved), "SKILL.md") {
+			resolved = filepath.Dir(resolved)
+		}
+		return collectLocalFiles(resolved)
+	}
+	if strings.EqualFold(filepath.Base(skillDir), "SKILL.md") {
+		skillDir = filepath.Dir(skillDir)
+	}
+
+	for _, src := range gitRegistriesFromManifest(merged) {
+		if src.Name() != registryName {
+			continue
+		}
+		return collectSkillPreviewFilesFromRegistrySource(src, skillDir)
+	}
+	return nil
+}
+
+func collectSkillPreviewFilesFromRegistrySource(src registry.SkillSource, skillDir string) []map[string]any {
+	if rs, ok := src.(registry.ResourceSource); ok {
+		all, err := rs.ListResourceFiles("skills")
+		if err != nil {
+			return nil
+		}
+		prefix := filepath.ToSlash(strings.TrimSuffix(skillDir, "/")) + "/"
+		var names []string
+		for _, p := range all {
+			normalized := filepath.ToSlash(p)
+			if strings.HasPrefix(normalized, prefix) {
+				names = append(names, strings.TrimPrefix(normalized, prefix))
+			}
+		}
+		sort.Strings(names)
+		files := make([]map[string]any, 0, len(names))
+		for _, n := range names {
+			data, err := rs.FetchResourceFile("skills", filepath.ToSlash(filepath.Join(skillDir, n)))
+			if err != nil {
+				continue
+			}
+			binary := isBinary(data)
+			content := ""
+			if !binary {
+				content = strings.TrimSpace(string(data))
+			}
+			files = append(files, map[string]any{"name": n, "content": content, "binary": binary})
+		}
+		if len(files) > 0 {
+			return files
+		}
+	}
+
+	fs, ok := src.(registry.FileSource)
+	if !ok {
+		return nil
+	}
+	names, err := fs.ListFiles(skillDir, "")
+	if err != nil {
+		return nil
+	}
+	sort.Strings(names)
+	files := make([]map[string]any, 0, len(names))
+	for _, n := range names {
+		data, err := fs.FetchFile(skillDir, n)
+		if err != nil {
+			continue
+		}
+		binary := isBinary(data)
+		content := ""
+		if !binary {
+			content = strings.TrimSpace(string(data))
+		}
+		files = append(files, map[string]any{"name": n, "content": content, "binary": binary})
+	}
+	return files
+}
+
+func collectLocalFiles(root string) []map[string]any {
+	if strings.EqualFold(filepath.Base(root), "SKILL.md") {
+		root = filepath.Dir(root)
+	}
+	stat, err := os.Stat(root)
+	if err != nil || !stat.IsDir() {
+		return nil
+	}
+	var files []map[string]any
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		binary := isBinary(data)
+		content := ""
+		if !binary {
+			content = strings.TrimSpace(string(data))
+		}
+		files = append(files, map[string]any{"name": filepath.ToSlash(rel), "content": content, "binary": binary})
+		return nil
+	})
+	sort.Slice(files, func(i, j int) bool {
+		left, _ := files[i]["name"].(string)
+		right, _ := files[j]["name"].(string)
+		return left < right
+	})
+	return files
+}
+
+func isBinary(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	if strings.IndexByte(string(data), 0) >= 0 {
+		return true
+	}
+	for _, b := range data {
+		if b < 9 {
+			return true
+		}
+	}
+	return false
+}
+
+func findSkillRefByName(m *manifest.Manifest, name string) *manifest.SkillRef {
+	if m == nil {
+		return nil
+	}
+	for i := range m.Skills {
+		if m.Skills[i].Name == name {
+			return &m.Skills[i]
+		}
+	}
+	return nil
 }
 
 type registryResourceItem struct {
@@ -593,8 +912,9 @@ func collectAvailableSkills(merged *manifest.Manifest) []ResourceItem {
 			}
 			seen[name] = true
 			items = append(items, ResourceItem{
-				Name:      name,
-				Installed: installed[name],
+				Name:         name,
+				Installed:    installed[name],
+				InstallScope: installScopeNone,
 			})
 		}
 	}
@@ -609,9 +929,33 @@ func collectInstalledSkills(merged *manifest.Manifest) []ResourceItem {
 	var items []ResourceItem
 	for _, s := range merged.Skills {
 		items = append(items, ResourceItem{
-			Name:      s.Name,
-			Installed: true,
+			Name:         s.Name,
+			Installed:    true,
+			InstallScope: installScopeLocal,
 		})
+	}
+	return items
+}
+
+func collectInstalledSkillsWithScope(local, global, merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	localSet := make(map[string]bool)
+	if local != nil {
+		for _, s := range local.Skills {
+			localSet[s.Name] = true
+		}
+	}
+	globalSet := make(map[string]bool)
+	if global != nil {
+		for _, s := range global.Skills {
+			globalSet[s.Name] = true
+		}
+	}
+	items := make([]ResourceItem, 0, len(merged.Skills))
+	for _, s := range merged.Skills {
+		items = append(items, ResourceItem{Name: s.Name, Installed: true, InstallScope: resolveInstallScope(localSet[s.Name], globalSet[s.Name])})
 	}
 	return items
 }
@@ -624,9 +968,33 @@ func collectAgents(merged *manifest.Manifest) []ResourceItem {
 	var items []ResourceItem
 	for _, a := range merged.Agents {
 		items = append(items, ResourceItem{
-			Name:      a.Name,
-			Installed: true,
+			Name:         a.Name,
+			Installed:    true,
+			InstallScope: installScopeLocal,
 		})
+	}
+	return items
+}
+
+func collectAgentsWithScope(local, global, merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	localSet := make(map[string]bool)
+	if local != nil {
+		for _, a := range local.Agents {
+			localSet[a.Name] = true
+		}
+	}
+	globalSet := make(map[string]bool)
+	if global != nil {
+		for _, a := range global.Agents {
+			globalSet[a.Name] = true
+		}
+	}
+	items := make([]ResourceItem, 0, len(merged.Agents))
+	for _, a := range merged.Agents {
+		items = append(items, ResourceItem{Name: a.Name, Installed: true, InstallScope: resolveInstallScope(localSet[a.Name], globalSet[a.Name])})
 	}
 	return items
 }
@@ -641,7 +1009,7 @@ func collectAvailableAgents(merged *manifest.Manifest) []ResourceItem {
 	refs := collectRegistryResourceItems(merged, ResourceAgents)
 	var items []ResourceItem
 	for _, ref := range refs {
-		items = append(items, ResourceItem{Name: ref.Name, Installed: installed[ref.Name]})
+		items = append(items, ResourceItem{Name: ref.Name, Installed: installed[ref.Name], InstallScope: installScopeNone})
 	}
 	return items
 }
@@ -654,9 +1022,33 @@ func collectInstructions(merged *manifest.Manifest) []ResourceItem {
 	var items []ResourceItem
 	for _, inst := range merged.Instructions {
 		items = append(items, ResourceItem{
-			Name:      inst.Name,
-			Installed: true,
+			Name:         inst.Name,
+			Installed:    true,
+			InstallScope: installScopeLocal,
 		})
+	}
+	return items
+}
+
+func collectInstructionsWithScope(local, global, merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	localSet := make(map[string]bool)
+	if local != nil {
+		for _, i := range local.Instructions {
+			localSet[i.Name] = true
+		}
+	}
+	globalSet := make(map[string]bool)
+	if global != nil {
+		for _, i := range global.Instructions {
+			globalSet[i.Name] = true
+		}
+	}
+	items := make([]ResourceItem, 0, len(merged.Instructions))
+	for _, i := range merged.Instructions {
+		items = append(items, ResourceItem{Name: i.Name, Installed: true, InstallScope: resolveInstallScope(localSet[i.Name], globalSet[i.Name])})
 	}
 	return items
 }
@@ -671,9 +1063,118 @@ func collectAvailableInstructions(merged *manifest.Manifest) []ResourceItem {
 	refs := collectRegistryResourceItems(merged, ResourceInstructions)
 	var items []ResourceItem
 	for _, ref := range refs {
-		items = append(items, ResourceItem{Name: ref.Name, Installed: installed[ref.Name]})
+		items = append(items, ResourceItem{Name: ref.Name, Installed: installed[ref.Name], InstallScope: installScopeNone})
 	}
 	return items
+}
+
+func collectTargets(merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	items := make([]ResourceItem, 0, len(merged.Targets))
+	for _, t := range merged.Targets {
+		items = append(items, ResourceItem{Name: t, Installed: true, InstallScope: installScopeLocal})
+	}
+	return items
+}
+
+func collectTargetsWithScope(local, global, merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	localSet := make(map[string]bool)
+	if local != nil {
+		for _, t := range local.Targets {
+			localSet[t] = true
+		}
+	}
+	globalSet := make(map[string]bool)
+	if global != nil {
+		for _, t := range global.Targets {
+			globalSet[t] = true
+		}
+	}
+	items := make([]ResourceItem, 0, len(merged.Targets))
+	for _, t := range merged.Targets {
+		items = append(items, ResourceItem{Name: t, Installed: true, InstallScope: resolveInstallScope(localSet[t], globalSet[t])})
+	}
+	return items
+}
+
+func collectAvailableTargets(merged *manifest.Manifest) []ResourceItem {
+	installed := make(map[string]bool)
+	if merged != nil {
+		for _, t := range merged.Targets {
+			installed[t] = true
+		}
+	}
+	items := make([]ResourceItem, 0, len(manifest.ValidTargets))
+	for _, t := range manifest.ValidTargets {
+		items = append(items, ResourceItem{Name: t, Installed: installed[t], InstallScope: installScopeNone})
+	}
+	return items
+}
+
+func collectInstalledRegistries(local *manifest.Manifest) []ResourceItem {
+	if local == nil {
+		return nil
+	}
+	items := make([]ResourceItem, 0, len(local.Registries))
+	for _, r := range local.Registries {
+		items = append(items, ResourceItem{Name: r.Name, Installed: true, InstallScope: installScopeLocal})
+	}
+	return items
+}
+
+func collectInstalledRegistriesWithScope(local, global, merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	localSet := make(map[string]bool)
+	if local != nil {
+		for _, r := range local.Registries {
+			localSet[r.Name] = true
+		}
+	}
+	globalSet := make(map[string]bool)
+	if global != nil {
+		for _, r := range global.Registries {
+			globalSet[r.Name] = true
+		}
+	}
+	items := make([]ResourceItem, 0, len(merged.Registries))
+	for _, r := range merged.Registries {
+		items = append(items, ResourceItem{Name: r.Name, Installed: true, InstallScope: resolveInstallScope(localSet[r.Name], globalSet[r.Name])})
+	}
+	return items
+}
+
+func collectAvailableRegistries(merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return []ResourceItem{{Name: "awesome-copilot", Installed: false, InstallScope: installScopeNone}}
+	}
+	items := make([]ResourceItem, 0, len(merged.Registries))
+	for _, r := range merged.Registries {
+		items = append(items, ResourceItem{Name: r.Name, Installed: false, InstallScope: installScopeNone})
+	}
+	if len(items) == 0 {
+		items = append(items, ResourceItem{Name: "awesome-copilot", Installed: false, InstallScope: installScopeNone})
+	}
+	return items
+}
+
+func resolveInstallScope(localInstalled, globalInstalled bool) string {
+	if localInstalled && globalInstalled {
+		return installScopeBoth
+	}
+	if localInstalled {
+		return installScopeLocal
+	}
+	if globalInstalled {
+		return installScopeGlobal
+	}
+	return installScopeNone
 }
 
 func collectRegistryResourceItems(merged *manifest.Manifest, resType ResourceType) []registryResourceItem {
@@ -786,6 +1287,10 @@ func completeResourceNames(resType ResourceType, mode string) []string {
 		return completeAgentNames(merged, mode)
 	case ResourceInstructions:
 		return completeInstructionNames(merged, mode)
+	case ResourceTargets:
+		return completeTargetNames(merged, mode)
+	case ResourceRegistries:
+		return completeRegistryNames(merged, mode)
 	default:
 		return nil
 	}
@@ -865,6 +1370,45 @@ func completeInstructionNames(merged *manifest.Manifest, mode string) []string {
 		}
 		return names
 	}
+}
+
+func completeTargetNames(merged *manifest.Manifest, mode string) []string {
+	switch mode {
+	case "available":
+		items := collectAvailableTargets(merged)
+		var names []string
+		for _, item := range items {
+			if !item.Installed {
+				names = append(names, item.Name)
+			}
+		}
+		return names
+	case "installed":
+		return resourceNamesFromItems(collectTargets(merged))
+	default:
+		return resourceNamesFromItems(collectAvailableTargets(merged))
+	}
+}
+
+func completeRegistryNames(merged *manifest.Manifest, mode string) []string {
+	if merged == nil {
+		if mode == "installed" {
+			return nil
+		}
+		return []string{"awesome-copilot"}
+	}
+	names := make([]string, 0, len(merged.Registries))
+	for _, r := range merged.Registries {
+		names = append(names, r.Name)
+	}
+	if mode == "installed" {
+		return names
+	}
+	if !contains(names, "awesome-copilot") {
+		names = append(names, "awesome-copilot")
+	}
+	sort.Strings(names)
+	return names
 }
 
 func contains(items []string, v string) bool {

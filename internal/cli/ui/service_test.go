@@ -33,10 +33,12 @@ func TestService_ListResources_ForwardsToBridge(t *testing.T) {
 			gotListInstalledKind = kind
 			return []ResourceRow{{Name: "alpha", Installed: true}}, nil
 		},
-		ShowResource:     func(projectDir, globalPath, kind, name string) (ResourceDetail, error) { return ResourceDetail{}, nil },
-		MergeRows:        func(available, installed []ResourceRow) []ResourceRow { return append(available, installed...) },
-		InstallResources: func(projectDir, globalPath, kind string, names []string) error { return nil },
-		RemoveResources:  func(projectDir, kind string, names []string) error { return nil },
+		ShowResource:           func(projectDir, globalPath, kind, name string) (ResourceDetail, error) { return ResourceDetail{}, nil },
+		MergeRows:              func(available, installed []ResourceRow) []ResourceRow { return append(available, installed...) },
+		InstallResources:       func(projectDir, globalPath, kind string, names []string) error { return nil },
+		RemoveResources:        func(projectDir, kind string, names []string) error { return nil },
+		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
+		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)
@@ -89,9 +91,11 @@ func TestService_ShowResource_ForwardsToBridge(t *testing.T) {
 			gotName = name
 			return ResourceDetail{Kind: kind, Name: name, Installed: true}, nil
 		},
-		MergeRows:        func(available, installed []ResourceRow) []ResourceRow { return nil },
-		InstallResources: func(projectDir, globalPath, kind string, names []string) error { return nil },
-		RemoveResources:  func(projectDir, kind string, names []string) error { return nil },
+		MergeRows:              func(available, installed []ResourceRow) []ResourceRow { return nil },
+		InstallResources:       func(projectDir, globalPath, kind string, names []string) error { return nil },
+		RemoveResources:        func(projectDir, kind string, names []string) error { return nil },
+		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
+		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)
@@ -132,7 +136,9 @@ func TestService_InstallResources_ForwardsToBridge(t *testing.T) {
 			gotNames = append([]string(nil), names...)
 			return nil
 		},
-		RemoveResources: func(projectDir, kind string, names []string) error { return nil },
+		RemoveResources:        func(projectDir, kind string, names []string) error { return nil },
+		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
+		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)
@@ -167,6 +173,8 @@ func TestService_RemoveResources_ForwardsToBridge(t *testing.T) {
 			gotNames = append([]string(nil), names...)
 			return nil
 		},
+		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
+		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)

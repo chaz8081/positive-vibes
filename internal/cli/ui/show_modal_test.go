@@ -54,11 +54,8 @@ func TestShowModal_Flow(t *testing.T) {
 
 	view := m.View()
 	for _, want := range []string{
-		"Source metadata",
-		"Path/registry",
-		"Content preview",
-		"skills/bravo.yaml",
-		"community",
+		"DETAIL",
+		"esc to go back",
 		"bravo detail payload",
 	} {
 		if !strings.Contains(view, want) {

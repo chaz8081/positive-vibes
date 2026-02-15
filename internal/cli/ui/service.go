@@ -13,6 +13,8 @@ const (
 	resourceKindSkills       = "skills"
 	resourceKindAgents       = "agents"
 	resourceKindInstructions = "instructions"
+	resourceKindTargets      = "targets"
+	resourceKindRegistries   = "registries"
 )
 
 var ErrResourceServiceBridgeNotConfigured = errors.New("resource service bridge is not configured")
@@ -28,17 +30,21 @@ type ResourceDetail struct {
 }
 
 type ResourceRow struct {
-	Name      string
-	Installed bool
+	Name         string
+	Description  string
+	Installed    bool
+	InstallScope string
 }
 
 type ResourceServiceBridge struct {
-	ListAvailableRows func(projectDir, globalPath, kind string) ([]ResourceRow, error)
-	ListInstalledRows func(projectDir, globalPath, kind string) ([]ResourceRow, error)
-	ShowResource      func(projectDir, globalPath, kind, name string) (ResourceDetail, error)
-	MergeRows         func(available, installed []ResourceRow) []ResourceRow
-	InstallResources  func(projectDir, globalPath, kind string, names []string) error
-	RemoveResources   func(projectDir, kind string, names []string) error
+	ListAvailableRows      func(projectDir, globalPath, kind string) ([]ResourceRow, error)
+	ListInstalledRows      func(projectDir, globalPath, kind string) ([]ResourceRow, error)
+	ShowResource           func(projectDir, globalPath, kind, name string) (ResourceDetail, error)
+	MergeRows              func(available, installed []ResourceRow) []ResourceRow
+	InstallResources       func(projectDir, globalPath, kind string, names []string) error
+	RemoveResources        func(projectDir, kind string, names []string) error
+	InstallResourcesGlobal func(projectDir, globalPath, kind string, names []string) error
+	RemoveResourcesGlobal  func(projectDir, globalPath, kind string, names []string) error
 }
 
 var (
@@ -91,6 +97,12 @@ func validateResourceServiceBridge(bridge ResourceServiceBridge) error {
 	if bridge.RemoveResources == nil {
 		return fmt.Errorf("resource service bridge RemoveResources is required")
 	}
+	if bridge.InstallResourcesGlobal == nil {
+		return fmt.Errorf("resource service bridge InstallResourcesGlobal is required")
+	}
+	if bridge.RemoveResourcesGlobal == nil {
+		return fmt.Errorf("resource service bridge RemoveResourcesGlobal is required")
+	}
 	return nil
 }
 
@@ -112,6 +124,8 @@ type serviceDeps struct {
 	mergeRows     func(available, installed []ResourceRow) []ResourceRow
 	install       func(kind string, names []string) error
 	remove        func(kind string, names []string) error
+	installGlobal func(kind string, names []string) error
+	removeGlobal  func(kind string, names []string) error
 }
 
 func NewService(projectDir string) (*Service, error) {
@@ -147,6 +161,12 @@ func NewServiceWithBridge(projectDir string, bridge ResourceServiceBridge) (*Ser
 		},
 		remove: func(kind string, names []string) error {
 			return bridge.RemoveResources(projectDir, kind, names)
+		},
+		installGlobal: func(kind string, names []string) error {
+			return bridge.InstallResourcesGlobal(projectDir, globalPath, kind, names)
+		},
+		removeGlobal: func(kind string, names []string) error {
+			return bridge.RemoveResourcesGlobal(projectDir, globalPath, kind, names)
 		},
 	}), nil
 }
@@ -199,12 +219,26 @@ func (s *Service) RemoveResources(kind string, names []string) error {
 	return s.deps.remove(kind, dedup(names))
 }
 
+func (s *Service) InstallResourcesGlobal(kind string, names []string) error {
+	if err := validateKind(kind); err != nil {
+		return err
+	}
+	return s.deps.installGlobal(kind, dedup(names))
+}
+
+func (s *Service) RemoveResourcesGlobal(kind string, names []string) error {
+	if err := validateKind(kind); err != nil {
+		return err
+	}
+	return s.deps.removeGlobal(kind, dedup(names))
+}
+
 func validateKind(kind string) error {
 	switch kind {
-	case resourceKindSkills, resourceKindAgents, resourceKindInstructions:
+	case resourceKindSkills, resourceKindAgents, resourceKindInstructions, resourceKindTargets, resourceKindRegistries:
 		return nil
 	default:
-		return fmt.Errorf("unknown resource type %q (valid: skills, agents, instructions)", kind)
+		return fmt.Errorf("unknown resource type %q (valid: skills, agents, instructions, targets, registries)", kind)
 	}
 }
 

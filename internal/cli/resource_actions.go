@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -21,6 +22,12 @@ func InstallResourceItems(projectDir, globalPath, kind string, names []string) e
 	return err
 }
 
+func InstallResourceItemsGlobal(globalPath, kind string, names []string) error {
+	globalDir := filepath.Dir(globalPath)
+	_, err := InstallResourceItemsWithReport(globalDir, globalPath, kind, names)
+	return err
+}
+
 func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names []string) (ResourceMutationReport, error) {
 	uniqueNames, skippedDuplicateNames := uniqueRequestNames(names)
 	report := ResourceMutationReport{SkippedDuplicateNames: skippedDuplicateNames}
@@ -35,9 +42,10 @@ func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names [
 
 	switch resType {
 	case ResourceSkills:
-		_, manifestPath, findErr := manifest.LoadManifestFromProject(projectDir)
+		m, manifestPath, findErr := manifest.LoadManifestFromProject(projectDir)
 		if findErr != nil {
 			manifestPath = filepath.Join(projectDir, "vibes.yaml")
+			m = &manifest.Manifest{}
 		}
 
 		merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
@@ -45,21 +53,60 @@ func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names [
 
 		var errs []string
 		for _, name := range uniqueNames {
-			if err := installer.Install(name, manifestPath); err != nil {
-				if strings.Contains(err.Error(), "already in manifest") {
-					appendUniqueName(&report.SkippedDuplicateNames, name)
-					continue
+			existing := false
+			for _, s := range m.Skills {
+				if s.Name == name {
+					existing = true
+					break
 				}
-				errs = append(errs, err.Error())
+			}
+			if existing {
+				appendUniqueName(&report.SkippedDuplicateNames, name)
 				continue
 			}
+
+			localSkillPath := filepath.Join(projectDir, "skills", name, "SKILL.md")
+			if _, err := os.Stat(localSkillPath); err == nil {
+				m.Skills = append(m.Skills, manifest.SkillRef{Name: name, Path: "./skills/" + name})
+				report.MutatedNames = append(report.MutatedNames, name)
+				continue
+			}
+
+			registryName := ""
+			for _, set := range collectSkillSets(merged) {
+				for _, skillName := range set.Skills {
+					if skillName == name {
+						registryName = set.RegistryName
+						break
+					}
+				}
+				if registryName != "" {
+					break
+				}
+			}
+
+			if registryName == "" {
+				if err := installer.Install(name, manifestPath); err != nil {
+					errs = append(errs, err.Error())
+					continue
+				}
+				report.MutatedNames = append(report.MutatedNames, name)
+				continue
+			}
+
+			ref := manifest.SkillRef{Name: name}
+			if registryName != "embedded" {
+				ref.Registry = registryName
+				ensureRegistryRefInManifest(m, merged, registryName)
+			}
+			m.Skills = append(m.Skills, ref)
 			report.MutatedNames = append(report.MutatedNames, name)
 		}
 		if len(errs) > 0 {
-			return report, fmt.Errorf(strings.Join(errs, "; "))
+			return report, fmt.Errorf("%s", strings.Join(errs, "; "))
 		}
-		return report, nil
-	case ResourceAgents, ResourceInstructions:
+		return report, manifest.SaveManifest(m, manifestPath)
+	case ResourceAgents, ResourceInstructions, ResourceTargets, ResourceRegistries:
 		m, manifestPath, findErr := manifest.LoadManifestFromProject(projectDir)
 		if findErr != nil {
 			manifestPath = filepath.Join(projectDir, "vibes.yaml")
@@ -88,6 +135,7 @@ func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names [
 				if ref, ok := availableByName[name]; ok {
 					a.Registry = ref.Registry
 					a.Path = ref.Path
+					ensureRegistryRefInManifest(m, merged, ref.Registry)
 				} else {
 					a.Path = fmt.Sprintf("./agents/%s.md", name)
 				}
@@ -109,10 +157,65 @@ func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names [
 				if ref, ok := availableByName[name]; ok {
 					i.Registry = ref.Registry
 					i.Path = ref.Path
+					ensureRegistryRefInManifest(m, merged, ref.Registry)
 				} else {
 					i.Path = fmt.Sprintf("./instructions/%s.md", name)
 				}
 				m.Instructions = append(m.Instructions, i)
+				existing[name] = true
+				report.MutatedNames = append(report.MutatedNames, name)
+			}
+		case ResourceTargets:
+			existing := make(map[string]bool)
+			for _, t := range m.Targets {
+				existing[t] = true
+			}
+			for _, name := range uniqueNames {
+				if !contains(manifest.ValidTargets, name) {
+					appendUniqueName(&report.SkippedMissingNames, name)
+					continue
+				}
+				if existing[name] {
+					appendUniqueName(&report.SkippedDuplicateNames, name)
+					continue
+				}
+				m.Targets = append(m.Targets, name)
+				existing[name] = true
+				report.MutatedNames = append(report.MutatedNames, name)
+			}
+		case ResourceRegistries:
+			existing := make(map[string]bool)
+			for _, r := range m.Registries {
+				existing[r.Name] = true
+			}
+			for _, name := range uniqueNames {
+				if existing[name] {
+					appendUniqueName(&report.SkippedDuplicateNames, name)
+					continue
+				}
+				added := false
+				if merged != nil {
+					for _, r := range merged.Registries {
+						if r.Name == name {
+							m.Registries = append(m.Registries, normalizeRegistryRefPaths(r))
+							added = true
+							break
+						}
+					}
+				}
+				if !added && name == "awesome-copilot" {
+					m.Registries = append(m.Registries, normalizeRegistryRefPaths(manifest.RegistryRef{
+						Name:  "awesome-copilot",
+						URL:   "https://github.com/github/awesome-copilot",
+						Ref:   "latest",
+						Paths: map[string]string{"skills": "skills/"},
+					}))
+					added = true
+				}
+				if !added {
+					appendUniqueName(&report.SkippedMissingNames, name)
+					continue
+				}
 				existing[name] = true
 				report.MutatedNames = append(report.MutatedNames, name)
 			}
@@ -127,6 +230,12 @@ func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names [
 // RemoveResourceItems removes resources by type without interactive prompts.
 func RemoveResourceItems(projectDir, kind string, names []string) error {
 	_, err := RemoveResourceItemsWithReport(projectDir, kind, names)
+	return err
+}
+
+func RemoveResourceItemsGlobal(globalPath, kind string, names []string) error {
+	globalDir := filepath.Dir(globalPath)
+	_, err := RemoveResourceItemsWithReport(globalDir, kind, names)
 	return err
 }
 
@@ -163,10 +272,10 @@ func RemoveResourceItemsWithReport(projectDir, kind string, names []string) (Res
 			report.MutatedNames = append(report.MutatedNames, name)
 		}
 		if len(errs) > 0 {
-			return report, fmt.Errorf(strings.Join(errs, "; "))
+			return report, fmt.Errorf("%s", strings.Join(errs, "; "))
 		}
 		return report, nil
-	case ResourceAgents, ResourceInstructions:
+	case ResourceAgents, ResourceInstructions, ResourceTargets, ResourceRegistries:
 		m, manifestPath, findErr := manifest.LoadManifestFromProject(projectDir)
 		if findErr != nil {
 			return report, fmt.Errorf("no manifest found in %s", projectDir)
@@ -205,6 +314,38 @@ func RemoveResourceItemsWithReport(projectDir, kind string, names []string) (Res
 				m.Instructions = append(m.Instructions[:idx], m.Instructions[idx+1:]...)
 				report.MutatedNames = append(report.MutatedNames, name)
 			}
+		case ResourceTargets:
+			for _, name := range uniqueNames {
+				idx := -1
+				for i, targetName := range m.Targets {
+					if targetName == name {
+						idx = i
+						break
+					}
+				}
+				if idx < 0 {
+					appendUniqueName(&report.SkippedMissingNames, name)
+					continue
+				}
+				m.Targets = append(m.Targets[:idx], m.Targets[idx+1:]...)
+				report.MutatedNames = append(report.MutatedNames, name)
+			}
+		case ResourceRegistries:
+			for _, name := range uniqueNames {
+				idx := -1
+				for i, r := range m.Registries {
+					if r.Name == name {
+						idx = i
+						break
+					}
+				}
+				if idx < 0 {
+					appendUniqueName(&report.SkippedMissingNames, name)
+					continue
+				}
+				m.Registries = append(m.Registries[:idx], m.Registries[idx+1:]...)
+				report.MutatedNames = append(report.MutatedNames, name)
+			}
 		}
 
 		return report, manifest.SaveManifest(m, manifestPath)
@@ -238,4 +379,41 @@ func appendUniqueName(names *[]string, name string) {
 		}
 	}
 	*names = append(*names, name)
+}
+
+func ensureRegistryRefInManifest(m *manifest.Manifest, merged *manifest.Manifest, registryName string) {
+	if m == nil || registryName == "" {
+		return
+	}
+	for _, r := range m.Registries {
+		if r.Name == registryName {
+			return
+		}
+	}
+	if merged != nil {
+		for _, r := range merged.Registries {
+			if r.Name == registryName {
+				m.Registries = append(m.Registries, normalizeRegistryRefPaths(r))
+				return
+			}
+		}
+	}
+}
+
+func normalizeRegistryRefPaths(r manifest.RegistryRef) manifest.RegistryRef {
+	if r.Paths == nil {
+		r.Paths = map[string]string{}
+	}
+	root := r.Paths["skills"]
+	if root == "" {
+		root = "skills/"
+		r.Paths["skills"] = root
+	}
+	if r.Paths["instructions"] == "" {
+		r.Paths["instructions"] = root
+	}
+	if r.Paths["agents"] == "" {
+		r.Paths["agents"] = root
+	}
+	return r
 }

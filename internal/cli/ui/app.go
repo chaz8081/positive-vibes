@@ -21,6 +21,10 @@ func newRuntimeModel(projectDir string) model {
 	m.showResource = svc.ShowResource
 	m.installResources = svc.InstallResources
 	m.removeResources = svc.RemoveResources
+	m.installResourcesGlobal = svc.InstallResourcesGlobal
+	m.removeResourcesGlobal = svc.RemoveResourcesGlobal
+	m.screen = screenHome
+	m.refreshHomeInstalled()
 
 	if !m.refreshRowsForActiveRail() {
 		m.statusMessage = fmt.Sprintf("resource service unavailable: %v", m.statusMessage)
@@ -30,7 +34,7 @@ func newRuntimeModel(projectDir string) model {
 }
 
 func Run(projectDir string) error {
-	p := tea.NewProgram(newRuntimeModel(projectDir))
+	p := tea.NewProgram(newRuntimeModel(projectDir), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }

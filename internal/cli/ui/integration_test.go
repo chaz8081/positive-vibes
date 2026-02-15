@@ -259,6 +259,12 @@ func parityBridge() ui.ResourceServiceBridge {
 		RemoveResources: func(projectDir, kind string, names []string) error {
 			return cli.RemoveResourceItems(projectDir, kind, names)
 		},
+		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error {
+			return cli.InstallResourceItemsGlobal(globalPath, kind, names)
+		},
+		RemoveResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error {
+			return cli.RemoveResourceItemsGlobal(globalPath, kind, names)
+		},
 	}
 }
 

@@ -215,3 +215,24 @@ func TestRootNoArgs_TTYLaunchFailureReturnsError(t *testing.T) {
 	assert.True(t, launchCalled)
 	assert.False(t, helpCalled)
 }
+
+func TestShouldLaunchTUI_PrefersTerminalOutput(t *testing.T) {
+	tests := []struct {
+		name   string
+		stdin  bool
+		stdout bool
+		want   bool
+	}{
+		{name: "both terminals", stdin: true, stdout: true, want: true},
+		{name: "stdin redirected stdout terminal", stdin: false, stdout: true, want: true},
+		{name: "stdout redirected", stdin: true, stdout: false, want: false},
+		{name: "neither terminal", stdin: false, stdout: false, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldLaunchTUI(tc.stdin, tc.stdout)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

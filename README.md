@@ -125,6 +125,8 @@ Registry-backed resources use `registry: <name>` + `path`. For skills, `path` is
 
 Registry paths default to repo root (`.`) for all resource types. You can override each independently with `registries[].paths.skills`, `registries[].paths.instructions`, and `registries[].paths.agents`.
 
+When adding registries through the current TUI flow, `instructions` and `agents` roots are normalized to match the `skills` root unless explicitly set. This keeps path config portable and avoids redundant per-resource path duplication.
+
 `config validate` returns an error when a project resource references a registry that exists only in global config, to keep project manifests portable.
 
 ## Layered Configuration
@@ -204,10 +206,10 @@ registries:
 
 ### Interactive mode (no args)
 
-Running `positive-vibes` with no subcommand launches an interactive TUI **only when stdin and stdout are both TTYs**.
+Running `positive-vibes` with no subcommand launches an interactive TUI when `stdout` is a TTY.
 
 - In a terminal session, `positive-vibes` opens the resource browser UI.
-- In non-interactive contexts (CI, redirected input/output, scripts), `positive-vibes` prints help instead of launching the TUI.
+- In non-interactive contexts (CI, redirected output, scripts), `positive-vibes` prints help instead of launching the TUI.
 
 This keeps automation predictable while giving humans a fast default experience.
 
@@ -215,22 +217,40 @@ This keeps automation predictable while giving humans a fast default experience.
 
 | Key | Action |
 | --- | ------ |
-| `left` / `h` | Move to previous rail (`skills`/`instructions`/`agents`) |
+| `left` / `h` | Move to previous category |
 | `right` / `l` | Move to next rail |
-| `up` / `k` | Move cursor up |
-| `down` / `j` | Move cursor down |
-| `enter` | Open Show modal for the selected resource |
-| `i` | Open Install modal for installable resources |
-| `r` | Open Remove modal for installed resources |
-| `space` | Toggle selection in Install/Remove modal |
+| `up` / `down` | Move cursor up/down |
+| `j` / `k` | Move list cursor (or file cursor in skill detail) |
+| `tab` | Toggle list/preview focus |
+| `enter` | Open detail view for selected resource |
+| `space` | Cycle install scope for selected row (`none -> local -> global -> both -> none`) |
+| `/` | Open search |
 | `?` | Open help overlay |
-| `esc` | Close help/modal (cancel) |
+| `esc` | Universal back/close (`detail -> browser -> home -> quit`) |
 
-### Modal flows
+Current top-level categories in the TUI: `skills`, `instructions`, `agents`, `targets`, `registries`.
+
+### Install scope markers
+
+Browser rows show install scope markers:
+
+- `L` = installed in local `./vibes.yaml`
+- `G` = installed in global `~/.config/positive-vibes/vibes.yaml`
+- `B` = installed in both local and global
+- blank = not installed
+
+`space` cycles install scope in this order:
+
+- blank -> `L`
+- `L` -> `G`
+- `G` -> `B`
+- `B` -> blank
+
+### Detail view
 
 - **Show**: highlight a resource and press `enter` to view kind, name, install status, path/registry metadata, and payload preview.
-- **Install**: press `i`, move through installable resources, toggle with `space`, confirm with `enter`, cancel with `esc`.
-- **Remove**: press `r`, move through installed resources, toggle with `space`, confirm with `enter`, cancel with `esc`.
+- **Skills**: file list on left and preview on right; use `j/k` for file selection and preview scrolling (with focus).
+- **Registries**: detail includes effective roots for `skills`, `instructions`, and `agents`, with inherited values noted.
 
 ### Script-safe classic subcommands
 
@@ -239,13 +259,13 @@ For scripts and CI, use explicit subcommands instead of relying on no-args behav
 | Command | Description |
 | ------- | ----------- |
 | `positive-vibes init` | Scan project and create `vibes.yaml` |
-| `positive-vibes install <resource-type> [name...]` | Add skills, agents, or instructions to your manifest |
+| `positive-vibes install <resource-type> [name...]` | Add resources to your manifest (`skills`, `agents`, `instructions`, `targets`, `registries`) |
 | `positive-vibes install agents <name>` | Add an agent by name (registry-backed when available, else local path convention) |
-| `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`) |
+| `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`, `targets`, `registries`) |
 | `positive-vibes list agents` | List configured agents |
 | `positive-vibes show <resource-type> <name>` | Show detailed info for one resource |
 | `positive-vibes show agents <name>` | Show details for a configured agent |
-| `positive-vibes remove <resource-type> [name...]` | Remove resources from your manifest |
+| `positive-vibes remove <resource-type> [name...]` | Remove resources from your manifest (`skills`, `agents`, `instructions`, `targets`, `registries`) |
 | `positive-vibes remove agents <name>` | Remove one or more agents from your manifest |
 | `positive-vibes apply` | Sync resources to all configured target tool directories |
 | `positive-vibes apply --force` | Overwrite existing installed resources |

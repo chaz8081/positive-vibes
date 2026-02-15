@@ -45,13 +45,19 @@ func configureUIBridge() error {
 		RemoveResources: func(projectDir, kind string, names []string) error {
 			return RemoveResourceItems(projectDir, kind, names)
 		},
+		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error {
+			return InstallResourceItemsGlobal(globalPath, kind, names)
+		},
+		RemoveResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error {
+			return RemoveResourceItemsGlobal(globalPath, kind, names)
+		},
 	})
 }
 
 func toUIRows(items []ResourceItem) []ui.ResourceRow {
 	rows := make([]ui.ResourceRow, 0, len(items))
 	for _, item := range items {
-		rows = append(rows, ui.ResourceRow{Name: item.Name, Installed: item.Installed})
+		rows = append(rows, ui.ResourceRow{Name: item.Name, Installed: item.Installed, InstallScope: item.InstallScope})
 	}
 	return rows
 }
@@ -59,7 +65,7 @@ func toUIRows(items []ResourceItem) []ui.ResourceRow {
 func fromUIRows(rows []ui.ResourceRow) []ResourceItem {
 	items := make([]ResourceItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, ResourceItem{Name: row.Name, Installed: row.Installed})
+		items = append(items, ResourceItem{Name: row.Name, Installed: row.Installed, InstallScope: row.InstallScope})
 	}
 	return items
 }
