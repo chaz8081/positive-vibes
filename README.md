@@ -67,16 +67,17 @@ positive-vibes install agents code-reviewer
 positive-vibes apply
 ```
 
-This reads your manifest and installs configured resources (skills, instructions, agents) into your target tools' directories.
+This reads your manifest and installs configured resources (skills, instructions, agents, prompts) into your target tools' directories.
 
 ## The Manifest (`vibes.yaml`)
 
-The example below is runnable in this repo. First create local instruction/agent files:
+The example below is runnable in this repo. First create local instruction/agent/prompt files:
 
 ```bash
-mkdir -p instructions agents
+mkdir -p instructions agents prompts
 printf "Keep responses concise and actionable.\n" > instructions/repo-guidelines.md
 printf "# Local Reviewer\nFocus on correctness, readability, and tests.\n" > agents/local-reviewer.md
+printf "---\ndescription: Release checklist\n---\nConfirm tests pass and changelog is updated.\n" > prompts/release.prompt.md
 ```
 
 ```yaml
@@ -88,6 +89,7 @@ registries:
       skills: .
       instructions: .
       agents: .
+      prompts: .
 
 skills:
   - name: gh-cli
@@ -110,6 +112,10 @@ agents:
   - name: local-reviewer
     path: ./agents/local-reviewer.md
 
+prompts:
+  - name: release
+    path: ./prompts/release.prompt.md
+
 targets:
   - vscode-copilot
   - opencode
@@ -121,11 +127,11 @@ When `registry` is set, use `path` (file path inside that registry).
 
 Agent entries are object-based: each item must include `name` and `path`; add `registry` when the path is inside a registry.
 
-Registry-backed resources use `registry: <name>` + `path`. For skills, `path` is a folder inside the registry. For instructions and agents, `path` is a file inside the registry.
+Registry-backed resources use `registry: <name>` + `path`. For skills, `path` is a folder inside the registry. For instructions, agents, and prompts, `path` is a file inside the registry.
 
-Registry paths default to repo root (`.`) for all resource types. You can override each independently with `registries[].paths.skills`, `registries[].paths.instructions`, and `registries[].paths.agents`.
+Registry paths default to repo root (`.`) for all resource types. You can override each independently with `registries[].paths.skills`, `registries[].paths.instructions`, `registries[].paths.agents`, and `registries[].paths.prompts`.
 
-When adding registries through the current TUI flow, `instructions` and `agents` roots are normalized to match the `skills` root unless explicitly set. This keeps path config portable and avoids redundant per-resource path duplication.
+When adding registries through the current TUI flow, missing registry paths are normalized to resource-specific defaults: `skills/`, `instructions/`, `agents/`, and `prompts/`.
 
 `config validate` returns an error when a project resource references a registry that exists only in global config, to keep project manifests portable.
 
@@ -146,6 +152,7 @@ When both exist, they are merged:
 - **Skills**: combined by name; project overrides global for same name
 - **Instructions**: combined by name; project overrides global for same name
 - **Agents**: combined by name; project overrides global for same name
+- **Prompts**: combined by name; project overrides global for same name
 - **Targets**: project targets override global entirely
 - **Paths**: relative `path` entries are resolved from the manifest they came from
 - **Warnings**: `config validate` warns on risky overrides that change source type (e.g., `content` -> `path`, or registry -> path)
@@ -184,6 +191,7 @@ registries:
       skills: packages/skills
       instructions: docs/instructions
       agents: docs/agents
+      prompts: docs/prompts
 
   # Pin to a stable release
   - name: team-skills
@@ -217,18 +225,21 @@ This keeps automation predictable while giving humans a fast default experience.
 
 | Key | Action |
 | --- | ------ |
-| `left` / `h` | Move to previous category |
-| `right` / `l` | Move to next rail |
-| `up` / `down` | Move cursor up/down |
-| `j` / `k` | Move list cursor (or file cursor in skill detail) |
+| `left` / `h` | Focus list pane |
+| `right` / `l` | Focus preview pane |
+| `up` / `down` | Move cursor up/down or scroll preview (by focus) |
+| `j` / `k` | Vim-style vertical movement/scroll |
 | `tab` | Toggle list/preview focus |
-| `enter` | Open detail view for selected resource |
+| `enter` | Open detail view for multi-file skills (no-op for single-file skills, instructions/prompts/agents) |
 | `space` | Cycle install scope for selected row (`none -> local -> global -> both -> none`) |
+| `r` | In `targets`, reset local override back to inherited global targets |
 | `/` | Open search |
 | `?` | Open help overlay |
 | `esc` | Universal back/close (`detail -> browser -> home -> quit`) |
 
-Current top-level categories in the TUI: `skills`, `instructions`, `agents`, `targets`, `registries`.
+Current top-level categories in the TUI: `skills`, `instructions`, `prompts`, `agents`, `targets`, `registries`.
+
+When entering the `registries` rail, the TUI auto-promotes valid local-only registries into global config. If promotion is skipped (for example, name collision with different URL, or invalid local registry), the row is marked `L!` and `space` opens a guided fix dialog.
 
 ### Install scope markers
 
@@ -239,6 +250,10 @@ Browser rows show install scope markers:
 - `B` = installed in both local and global
 - blank = not installed
 
+For registries, an additional marker can appear:
+
+- `L!` = local registry needs attention (invalid local config or safe conflict that blocked auto-promotion)
+
 `space` cycles install scope in this order:
 
 - blank -> `L`
@@ -248,9 +263,11 @@ Browser rows show install scope markers:
 
 ### Detail view
 
-- **Show**: highlight a resource and press `enter` to view kind, name, install status, path/registry metadata, and payload preview.
+- **Show**: for **multi-file** skills, highlight and press `enter` to open full detail view (kind/name/status/paths/payload preview).
+- **Single-file skills**: preview inline in browser right pane; `enter` does not switch screens.
+- **Single-file types**: `instructions`, `prompts`, and `agents` preview inline in the browser right pane; `enter` does not switch screens.
 - **Skills**: file list on left and preview on right; use `j/k` for file selection and preview scrolling (with focus).
-- **Registries**: detail includes effective roots for `skills`, `instructions`, and `agents`, with inherited values noted.
+- **Registries**: detail includes effective roots for `skills`, `instructions`, `agents`, and `prompts`, with inherited values noted.
 
 ### Script-safe classic subcommands
 
@@ -259,13 +276,13 @@ For scripts and CI, use explicit subcommands instead of relying on no-args behav
 | Command | Description |
 | ------- | ----------- |
 | `positive-vibes init` | Scan project and create `vibes.yaml` |
-| `positive-vibes install <resource-type> [name...]` | Add resources to your manifest (`skills`, `agents`, `instructions`, `targets`, `registries`) |
+| `positive-vibes install <resource-type> [name...]` | Add resources to your manifest (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`) |
 | `positive-vibes install agents <name>` | Add an agent by name (registry-backed when available, else local path convention) |
-| `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`, `targets`, `registries`) |
+| `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`) |
 | `positive-vibes list agents` | List configured agents |
 | `positive-vibes show <resource-type> <name>` | Show detailed info for one resource |
 | `positive-vibes show agents <name>` | Show details for a configured agent |
-| `positive-vibes remove <resource-type> [name...]` | Remove resources from your manifest (`skills`, `agents`, `instructions`, `targets`, `registries`) |
+| `positive-vibes remove <resource-type> [name...]` | Remove resources from your manifest (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`) |
 | `positive-vibes remove agents <name>` | Remove one or more agents from your manifest |
 | `positive-vibes apply` | Sync resources to all configured target tool directories |
 | `positive-vibes apply --force` | Overwrite existing installed resources |
@@ -310,7 +327,7 @@ When you run `positive-vibes apply`, each configured skill is installed to the r
 | OpenCode        | `.opencode/skills/<name>/SKILL.md` |
 | Cursor          | `.cursor/skills/<name>/SKILL.md`   |
 
-Instructions and agents are also applied when configured, using each target's instruction/agent conventions.
+Instructions, agents, and prompts are also applied when configured, using each target's conventions (`.github/prompts/*.prompt.md` for Copilot, `.opencode/commands/*.md` for OpenCode; Cursor currently skips prompts with a warning).
 
 ## Bundled Skills
 

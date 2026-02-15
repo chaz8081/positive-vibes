@@ -19,7 +19,7 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 	var b strings.Builder
 
 	b.WriteString("# vibes.yaml - positive-vibes configuration\n")
-	b.WriteString("# Run 'positive-vibes apply' to sync skills and instructions to all targets.\n")
+	b.WriteString("# Run 'positive-vibes apply' to sync skills, instructions, agents, and prompts to all targets.\n")
 	b.WriteString("# Global (~/.config/positive-vibes/vibes.yaml) and project configs are merged automatically; project values take priority.\n")
 	b.WriteString("\n")
 
@@ -103,6 +103,29 @@ func renderBootstrapManifest(m *manifest.Manifest) string {
 		b.WriteString("#   - name: registry-agent\n")
 		b.WriteString("#     registry: awesome-copilot\n")
 		b.WriteString("#     path: my-skill/agents/reviewer.md\n")
+	}
+	b.WriteString("\n")
+
+	// Prompts
+	b.WriteString("# Prompts/commands (file-based templates). Use path (local file) or registry (remote).\n")
+	if len(m.Prompts) > 0 {
+		b.WriteString("prompts:\n")
+		for _, p := range m.Prompts {
+			b.WriteString(fmt.Sprintf("  - name: %s\n", p.Name))
+			if p.Path != "" {
+				b.WriteString(fmt.Sprintf("    path: %s\n", p.Path))
+			}
+			if p.Registry != "" {
+				b.WriteString(fmt.Sprintf("    registry: %s\n", p.Registry))
+			}
+		}
+	} else {
+		b.WriteString("# prompts:\n")
+		b.WriteString("#   - name: release-checklist\n")
+		b.WriteString("#     path: ./prompts/release.prompt.md\n")
+		b.WriteString("#   - name: migrate\n")
+		b.WriteString("#     registry: awesome-copilot\n")
+		b.WriteString("#     path: prompts/migrate.prompt.md\n")
 	}
 	b.WriteString("\n")
 

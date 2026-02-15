@@ -25,6 +25,7 @@ type GitRegistry struct {
 	SkillsPath       string // subdirectory inside the repo where skills live; defaults to "."
 	InstructionsPath string // base path for instructions in registry; defaults to "."
 	AgentsPath       string // base path for agents in registry; defaults to "."
+	PromptsPath      string // base path for prompts in registry; defaults to "."
 	Ref              string // "latest", branch name, tag name, or commit SHA
 }
 
@@ -153,6 +154,8 @@ func (r *GitRegistry) kindDir(kind string) string {
 		p = r.InstructionsPath
 	case "agents":
 		p = r.AgentsPath
+	case "prompts":
+		p = r.PromptsPath
 	default:
 		p = "."
 	}
@@ -254,7 +257,7 @@ func (r *GitRegistry) ListFiles(skillName, relDir string) ([]string, error) {
 }
 
 // FetchResourceFile retrieves raw file bytes from a resource base directory.
-// kind must be one of: "skills", "instructions", "agents".
+// kind must be one of: "skills", "instructions", "agents", "prompts".
 func (r *GitRegistry) FetchResourceFile(kind, relPath string) ([]byte, error) {
 	if err := r.ensureCache(); err != nil {
 		return nil, err

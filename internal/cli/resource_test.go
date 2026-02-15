@@ -24,6 +24,7 @@ func TestParseResourceType_Valid(t *testing.T) {
 		{"skills", ResourceSkills},
 		{"agents", ResourceAgents},
 		{"instructions", ResourceInstructions},
+		{"prompts", ResourcePrompts},
 	}
 	for _, tt := range tests {
 		rt, err := ParseResourceType(tt.input)
@@ -595,6 +596,8 @@ func TestMakeValidArgsFunction_InstructionsReturnsEmpty_NoManifest(t *testing.T)
 func TestResourceNameFromPath_AgentAndInstructionSuffixes(t *testing.T) {
 	assert.Equal(t, "debug", resourceNameFromPath(ResourceAgents, "agents/debug.agent.md"))
 	assert.Equal(t, "markdown", resourceNameFromPath(ResourceInstructions, "instructions/markdown.instructions.md"))
+	assert.Equal(t, "release", resourceNameFromPath(ResourcePrompts, "prompts/release.prompt.md"))
+	assert.Equal(t, "cleanup", resourceNameFromPath(ResourcePrompts, "prompts/cleanup.md"))
 	assert.Equal(t, "", resourceNameFromPath(ResourceAgents, "agents/readme.md"))
 	assert.Equal(t, "", resourceNameFromPath(ResourceInstructions, "instructions/readme.md"))
 }
@@ -737,8 +740,9 @@ func TestInstallAndRemoveResourceItems_RegistriesMutateProjectManifest(t *testin
 	require.Len(t, m.Registries, 1)
 	assert.Equal(t, "awesome-copilot", m.Registries[0].Name)
 	assert.Equal(t, "skills/", m.Registries[0].Paths["skills"])
-	assert.Equal(t, "skills/", m.Registries[0].Paths["instructions"])
-	assert.Equal(t, "skills/", m.Registries[0].Paths["agents"])
+	assert.Equal(t, "instructions/", m.Registries[0].Paths["instructions"])
+	assert.Equal(t, "agents/", m.Registries[0].Paths["agents"])
+	assert.Equal(t, "prompts/", m.Registries[0].Paths["prompts"])
 
 	removeReport, err := RemoveResourceItemsWithReport(projectDir, "registries", []string{"awesome-copilot"})
 	require.NoError(t, err)
@@ -787,8 +791,70 @@ func TestShowResourceDetail_RegistryIncludesEffectivePaths(t *testing.T) {
 	content, ok := payload["content"].(string)
 	require.True(t, ok)
 	assert.Contains(t, content, "skills: skills/")
-	assert.Contains(t, content, "instructions: skills/ (inherited)")
-	assert.Contains(t, content, "agents: skills/ (inherited)")
+	assert.Contains(t, content, "instructions: instructions/")
+	assert.Contains(t, content, "agents: agents/")
+	assert.Contains(t, content, "prompts: prompts/")
+}
+
+func TestShowResourceDetail_RegistrySourceState_LocalOverrideActive(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "vibes.yaml"), []byte(`registries:
+  - name: team-reg
+    url: https://example.com/local.git
+    ref: dev
+`), 0o644))
+
+	globalPath := filepath.Join(t.TempDir(), "global-vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte(`registries:
+  - name: team-reg
+    url: https://example.com/global.git
+    ref: main
+`), 0o644))
+
+	detail, err := ShowResourceDetail(projectDir, globalPath, "registries", "team-reg")
+	require.NoError(t, err)
+	payload, ok := detail.Payload.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "local_conflict", payload["source_state"])
+	assert.Equal(t, "local registry conflicts with global URL", payload["source_reason"])
+}
+
+func TestShowResourceDetail_RegistrySourceState_LocalIssue(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "vibes.yaml"), []byte(`registries:
+  - name: broken-reg
+    url: https://example.com/broken.git
+`), 0o644))
+
+	globalPath := filepath.Join(t.TempDir(), "global-vibes.yaml")
+
+	detail, err := ShowResourceDetail(projectDir, globalPath, "registries", "broken-reg")
+	require.NoError(t, err)
+	payload, ok := detail.Payload.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "local_issue", payload["source_state"])
+	assert.Equal(t, "local registry is invalid: missing ref", payload["source_reason"])
+}
+
+func TestListInstalledResourceItems_RegistriesMarksAttentionState(t *testing.T) {
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "vibes.yaml"), []byte(`registries:
+  - name: team-reg
+    url: https://example.com/local.git
+    ref: dev
+`), 0o644))
+
+	globalPath := filepath.Join(t.TempDir(), "global-vibes.yaml")
+	require.NoError(t, os.WriteFile(globalPath, []byte(`registries:
+  - name: team-reg
+    url: https://example.com/global.git
+    ref: main
+`), 0o644))
+
+	items, err := ListInstalledResourceItems(projectDir, globalPath, "registries")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "registry_attention", items[0].State)
 }
 
 type fakeRegistrySource struct {

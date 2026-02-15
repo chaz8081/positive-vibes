@@ -326,3 +326,28 @@ func TestInstallAgent_Force(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new agent", string(b))
 }
+
+func TestTargets_InstallPrompt_Destinations(t *testing.T) {
+	proj := t.TempDir()
+	srcDir := t.TempDir()
+	srcFile := filepath.Join(srcDir, "release.prompt.md")
+	require.NoError(t, os.WriteFile(srcFile, []byte("---\ndescription: Release\n---\nDo release tasks"), 0o644))
+
+	copilot := CopilotTarget{}
+	require.NoError(t, copilot.InstallPrompt("release", srcFile, proj, InstallOpts{}))
+	copilotPath := filepath.Join(proj, ".github", "prompts", "release.prompt.md")
+	if _, err := os.Stat(copilotPath); err != nil {
+		t.Fatalf("expected copilot prompt file: %v", err)
+	}
+
+	opencode := OpenCodeTarget{}
+	require.NoError(t, opencode.InstallPrompt("release", srcFile, proj, InstallOpts{}))
+	opencodePath := filepath.Join(proj, ".opencode", "commands", "release.md")
+	if _, err := os.Stat(opencodePath); err != nil {
+		t.Fatalf("expected opencode command file: %v", err)
+	}
+
+	cursor := CursorTarget{}
+	err := cursor.InstallPrompt("release", srcFile, proj, InstallOpts{})
+	require.Error(t, err)
+}

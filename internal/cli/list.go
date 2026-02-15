@@ -19,7 +19,7 @@ var listCmd = &cobra.Command{
 	Short: "List available resources",
 	Long: `List available resources of a given type.
 
-Resource types: skills, agents, instructions
+Resource types: skills, agents, instructions, prompts
 
 Examples:
   positive-vibes list skills
@@ -48,6 +48,8 @@ Examples:
 			listAgentsRun(merged)
 		case ResourceInstructions:
 			listInstructionsRun(merged)
+		case ResourcePrompts:
+			listPromptsRun(merged)
 		}
 	},
 }
@@ -88,6 +90,17 @@ func listInstructionsRun(merged *manifest.Manifest) {
 	}
 
 	fmt.Print(formatResourceList(ResourceInstructions, items))
+}
+
+func listPromptsRun(merged *manifest.Manifest) {
+	items := collectAvailablePrompts(merged)
+
+	if listJSON {
+		fmt.Println(formatResourceListJSON(ResourcePrompts, items))
+		return
+	}
+
+	fmt.Print(formatResourceList(ResourcePrompts, items))
 }
 
 func init() {

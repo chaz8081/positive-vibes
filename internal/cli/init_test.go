@@ -178,6 +178,12 @@ func TestRenderBootstrapManifest_EmptyInstructions_ShowsApplyTo(t *testing.T) {
 	assert.Contains(t, content, "#     apply_to:")
 }
 
+func TestRenderBootstrapManifest_EmptyPrompts_ShowsCommentedExamples(t *testing.T) {
+	content := renderBootstrapManifest(&manifest.Manifest{})
+	assert.Contains(t, content, "# prompts:")
+	assert.Contains(t, content, "#     path: ./prompts/release.prompt.md")
+}
+
 func TestRenderBootstrapManifest_PopulatedSkills_NotCommented(t *testing.T) {
 	m := &manifest.Manifest{
 		Skills: []manifest.SkillRef{{Name: "tdd"}},

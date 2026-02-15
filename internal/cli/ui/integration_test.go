@@ -265,6 +265,17 @@ func parityBridge() ui.ResourceServiceBridge {
 		RemoveResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error {
 			return cli.RemoveResourceItemsGlobal(globalPath, kind, names)
 		},
+		PromoteLocalRegistries: func(projectDir, globalPath string) (ui.RegistryPromotionResult, error) {
+			report, err := cli.PromoteLocalRegistriesToGlobalWithReport(projectDir, globalPath)
+			if err != nil {
+				return ui.RegistryPromotionResult{}, err
+			}
+			result := ui.RegistryPromotionResult{PromotedNames: append([]string(nil), report.PromotedNames...)}
+			for _, s := range report.Skipped {
+				result.Skipped = append(result.Skipped, ui.RegistryPromotionSkip{Name: s.Name, Reason: s.Reason})
+			}
+			return result, nil
+		},
 	}
 }
 

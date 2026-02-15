@@ -14,7 +14,7 @@ var showCmd = &cobra.Command{
 	Short: "Show details for a specific resource",
 	Long: `Display detailed information about a resource.
 
-Resource types: skills, agents, instructions
+Resource types: skills, agents, instructions, prompts
 
 Examples:
   positive-vibes show skills code-review
@@ -37,6 +37,8 @@ Examples:
 			showAgentRun(name)
 		case ResourceInstructions:
 			showInstructionRun(name)
+		case ResourcePrompts:
+			showPromptRun(name)
 		}
 	},
 }
@@ -84,6 +86,19 @@ func showInstructionRun(name string) {
 		inst = manifest.InstructionRef{Name: detail.Name, Registry: detail.Registry, Path: detail.Path}
 	}
 	fmt.Print(formatInstructionShow(inst, detail.Installed))
+}
+
+func showPromptRun(name string) {
+	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourcePrompts), name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
+	}
+	prompt, ok := detail.Payload.(manifest.PromptRef)
+	if !ok {
+		prompt = manifest.PromptRef{Name: detail.Name, Registry: detail.Registry, Path: detail.Path}
+	}
+	fmt.Print(formatPromptShow(prompt, detail.Installed))
 }
 
 func init() {

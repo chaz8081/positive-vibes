@@ -49,7 +49,19 @@ func configureUIBridge() error {
 			return InstallResourceItemsGlobal(globalPath, kind, names)
 		},
 		RemoveResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error {
-			return RemoveResourceItemsGlobal(globalPath, kind, names)
+			_, err := RemoveResourceItemsGlobalWithReport(projectDir, globalPath, kind, names)
+			return err
+		},
+		PromoteLocalRegistries: func(projectDir, globalPath string) (ui.RegistryPromotionResult, error) {
+			report, err := PromoteLocalRegistriesToGlobalWithReport(projectDir, globalPath)
+			if err != nil {
+				return ui.RegistryPromotionResult{}, err
+			}
+			result := ui.RegistryPromotionResult{PromotedNames: append([]string(nil), report.PromotedNames...)}
+			for _, s := range report.Skipped {
+				result.Skipped = append(result.Skipped, ui.RegistryPromotionSkip{Name: s.Name, Reason: s.Reason})
+			}
+			return result, nil
 		},
 	})
 }
@@ -57,7 +69,7 @@ func configureUIBridge() error {
 func toUIRows(items []ResourceItem) []ui.ResourceRow {
 	rows := make([]ui.ResourceRow, 0, len(items))
 	for _, item := range items {
-		rows = append(rows, ui.ResourceRow{Name: item.Name, Installed: item.Installed, InstallScope: item.InstallScope})
+		rows = append(rows, ui.ResourceRow{Name: item.Name, Installed: item.Installed, InstallScope: item.InstallScope, State: item.State})
 	}
 	return rows
 }
@@ -65,7 +77,7 @@ func toUIRows(items []ResourceItem) []ui.ResourceRow {
 func fromUIRows(rows []ui.ResourceRow) []ResourceItem {
 	items := make([]ResourceItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, ResourceItem{Name: row.Name, Installed: row.Installed, InstallScope: row.InstallScope})
+		items = append(items, ResourceItem{Name: row.Name, Installed: row.Installed, InstallScope: row.InstallScope, State: row.State})
 	}
 	return items
 }

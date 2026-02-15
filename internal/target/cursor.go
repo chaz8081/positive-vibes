@@ -1,6 +1,7 @@
 package target
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -13,6 +14,7 @@ func (CursorTarget) Name() string           { return "cursor" }
 func (CursorTarget) SkillDir() string       { return filepath.Join(".cursor", "skills") }
 func (CursorTarget) InstructionDir() string { return filepath.Join(".cursor", "instructions") }
 func (CursorTarget) AgentDir() string       { return filepath.Join(".cursor", "agents") }
+func (CursorTarget) PromptDir() string      { return filepath.Join(".cursor", "prompts") }
 
 func (t CursorTarget) Install(skill *schema.Skill, sourceDir string, projectRoot string, opts InstallOpts) error {
 	return installGeneric(skill, sourceDir, projectRoot, t.SkillDir(), opts)
@@ -33,4 +35,8 @@ func (t CursorTarget) InstallInstruction(name, content, sourcePath, projectRoot 
 
 func (t CursorTarget) InstallAgent(name, sourcePath, projectRoot string, opts InstallOpts) error {
 	return installAgentGeneric(name, sourcePath, projectRoot, t.AgentDir(), opts)
+}
+
+func (t CursorTarget) InstallPrompt(name, sourcePath, projectRoot string, opts InstallOpts) error {
+	return fmt.Errorf("%w: %s", ErrPromptInstallUnsupported, t.Name())
 }

@@ -23,6 +23,7 @@ func newRuntimeModel(projectDir string) model {
 	m.removeResources = svc.RemoveResources
 	m.installResourcesGlobal = svc.InstallResourcesGlobal
 	m.removeResourcesGlobal = svc.RemoveResourcesGlobal
+	m.promoteLocalRegistries = svc.PromoteLocalRegistries
 	m.screen = screenHome
 	m.refreshHomeInstalled()
 

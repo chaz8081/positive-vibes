@@ -576,6 +576,29 @@ func TestValidateConfig_AgentPathMissing(t *testing.T) {
 	assert.True(t, found, "should report missing agent path")
 }
 
+func TestValidateConfig_PromptsRegistryReference(t *testing.T) {
+	m := &manifest.Manifest{
+		Skills: []manifest.SkillRef{{Name: "conventional-commits"}},
+		Prompts: []manifest.PromptRef{{
+			Name:     "release",
+			Registry: "missing-registry",
+			Path:     "prompts/release.prompt.md",
+		}},
+		Targets: []string{"opencode"},
+	}
+
+	result := validateConfig(m, []string{"conventional-commits"})
+	assert.False(t, result.ok())
+	found := false
+	for _, p := range result.problems {
+		if p.field == "release" {
+			found = true
+			assert.Contains(t, p.message, "registry not found")
+		}
+	}
+	assert.True(t, found, "should report missing prompt registry reference")
+}
+
 // --- Context-aware validation: global-only should not flag missing skills/targets ---
 
 func TestValidateConfig_GlobalOnly_NoSkillsOrTargets_IsOK(t *testing.T) {

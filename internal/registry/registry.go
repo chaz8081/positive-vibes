@@ -29,7 +29,7 @@ type FileSource interface {
 
 // ResourceSource exposes generic file operations for resource families that are
 // rooted at configurable registry base paths (skills, instructions, agents).
-// kind must be one of: "skills", "instructions", "agents".
+// kind must be one of: "skills", "instructions", "agents", "prompts".
 type ResourceSource interface {
 	SkillSource
 	FetchResourceFile(kind, relPath string) ([]byte, error)

@@ -17,7 +17,7 @@ var removeCmd = &cobra.Command{
 
 If no names are given, an interactive picker is shown.
 
-Resource types: skills, agents, instructions
+Resource types: skills, agents, instructions, prompts
 
 Examples:
   positive-vibes remove skills                      # interactive picker
@@ -41,6 +41,8 @@ Examples:
 			removeAgentsRun(names)
 		case ResourceInstructions:
 			removeInstructionsRun(names)
+		case ResourcePrompts:
+			removePromptsRun(names)
 		}
 	},
 }
@@ -230,6 +232,64 @@ func removeInstructionsRun(names []string) {
 	}
 	for _, name := range report.SkippedMissingNames {
 		fmt.Fprintf(os.Stderr, "warning: instruction not found in manifest: %s\n", name)
+	}
+}
+
+func removePromptsRun(names []string) {
+	project := ProjectDir()
+
+	m, _, findErr := manifest.LoadManifestFromProject(project)
+	if findErr != nil {
+		fmt.Fprintf(os.Stderr, "error: no manifest found in %s\n", project)
+		return
+	}
+
+	if len(names) == 0 {
+		if len(m.Prompts) == 0 {
+			fmt.Println("No prompts configured to remove.")
+			return
+		}
+
+		var options []huh.Option[string]
+		for _, p := range m.Prompts {
+			options = append(options, huh.NewOption(p.Name, p.Name))
+		}
+
+		var selected []string
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewMultiSelect[string]().
+					Title("Select prompts to remove").
+					Description("Use space to toggle, enter to confirm").
+					Options(options...).
+					Value(&selected),
+			),
+		)
+
+		err := form.Run()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return
+		}
+
+		if len(selected) == 0 {
+			fmt.Println("No prompts selected.")
+			return
+		}
+
+		names = selected
+	}
+
+	report, err := removeResourcesCommandAction(project, string(ResourcePrompts), names)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
+	}
+	for _, name := range report.MutatedNames {
+		fmt.Printf("Removed prompt '%s'\n", name)
+	}
+	for _, name := range report.SkippedMissingNames {
+		fmt.Fprintf(os.Stderr, "warning: prompt not found in manifest: %s\n", name)
 	}
 }
 

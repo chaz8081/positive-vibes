@@ -39,6 +39,9 @@ func TestService_ListResources_ForwardsToBridge(t *testing.T) {
 		RemoveResources:        func(projectDir, kind string, names []string) error { return nil },
 		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
 		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
+		PromoteLocalRegistries: func(projectDir, globalPath string) (RegistryPromotionResult, error) {
+			return RegistryPromotionResult{}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)
@@ -96,6 +99,9 @@ func TestService_ShowResource_ForwardsToBridge(t *testing.T) {
 		RemoveResources:        func(projectDir, kind string, names []string) error { return nil },
 		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
 		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
+		PromoteLocalRegistries: func(projectDir, globalPath string) (RegistryPromotionResult, error) {
+			return RegistryPromotionResult{}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)
@@ -139,6 +145,9 @@ func TestService_InstallResources_ForwardsToBridge(t *testing.T) {
 		RemoveResources:        func(projectDir, kind string, names []string) error { return nil },
 		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
 		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
+		PromoteLocalRegistries: func(projectDir, globalPath string) (RegistryPromotionResult, error) {
+			return RegistryPromotionResult{}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)
@@ -175,6 +184,9 @@ func TestService_RemoveResources_ForwardsToBridge(t *testing.T) {
 		},
 		InstallResourcesGlobal: func(projectDir, globalPath, kind string, names []string) error { return nil },
 		RemoveResourcesGlobal:  func(projectDir, globalPath, kind string, names []string) error { return nil },
+		PromoteLocalRegistries: func(projectDir, globalPath string) (RegistryPromotionResult, error) {
+			return RegistryPromotionResult{}, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewServiceWithBridge() error = %v", err)

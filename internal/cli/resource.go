@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -21,19 +22,20 @@ const (
 	ResourceSkills       ResourceType = "skills"
 	ResourceAgents       ResourceType = "agents"
 	ResourceInstructions ResourceType = "instructions"
+	ResourcePrompts      ResourceType = "prompts"
 	ResourceTargets      ResourceType = "targets"
 	ResourceRegistries   ResourceType = "registries"
 )
 
 // ValidResourceTypes returns the list of supported resource type strings.
 func ValidResourceTypes() []string {
-	return []string{string(ResourceSkills), string(ResourceAgents), string(ResourceInstructions), string(ResourceTargets), string(ResourceRegistries)}
+	return []string{string(ResourceSkills), string(ResourceAgents), string(ResourceInstructions), string(ResourcePrompts), string(ResourceTargets), string(ResourceRegistries)}
 }
 
 // ParseResourceType validates and returns a ResourceType from a string.
 func ParseResourceType(s string) (ResourceType, error) {
 	switch ResourceType(s) {
-	case ResourceSkills, ResourceAgents, ResourceInstructions, ResourceTargets, ResourceRegistries:
+	case ResourceSkills, ResourceAgents, ResourceInstructions, ResourcePrompts, ResourceTargets, ResourceRegistries:
 		return ResourceType(s), nil
 	default:
 		return "", fmt.Errorf("unknown resource type %q (valid: %s)", s, strings.Join(ValidResourceTypes(), ", "))
@@ -48,6 +50,7 @@ type ResourceItem struct {
 	Name         string
 	Installed    bool
 	InstallScope string
+	State        string
 }
 
 const (
@@ -115,6 +118,8 @@ func ListAvailableResourceItems(projectDir, globalPath, kind string) ([]Resource
 		return collectAvailableAgents(merged), nil
 	case ResourceInstructions:
 		return collectAvailableInstructions(merged), nil
+	case ResourcePrompts:
+		return collectAvailablePrompts(merged), nil
 	case ResourceTargets:
 		return collectAvailableTargets(merged), nil
 	case ResourceRegistries:
@@ -132,7 +137,10 @@ func ListInstalledResourceItems(projectDir, globalPath, kind string) ([]Resource
 	}
 	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
 	local, _, _ := manifest.LoadManifestFromProject(projectDir)
-	global, _ := manifest.LoadManifest(globalPath)
+	var global *manifest.Manifest
+	if globalPath != "" {
+		global, _ = manifest.LoadManifest(globalPath)
+	}
 
 	switch resType {
 	case ResourceSkills:
@@ -141,6 +149,8 @@ func ListInstalledResourceItems(projectDir, globalPath, kind string) ([]Resource
 		return collectAgentsWithScope(local, global, merged), nil
 	case ResourceInstructions:
 		return collectInstructionsWithScope(local, global, merged), nil
+	case ResourcePrompts:
+		return collectPromptsWithScope(local, global, merged), nil
 	case ResourceTargets:
 		return collectTargetsWithScope(local, global, merged), nil
 	case ResourceRegistries:
@@ -161,6 +171,11 @@ func ShowResourceDetail(projectDir, globalPath, kind, name string) (ResourceDeta
 	}
 
 	merged, _ := manifest.LoadMergedManifest(projectDir, globalPath)
+	local, _, _ := manifest.LoadManifestFromProject(projectDir)
+	var global *manifest.Manifest
+	if globalPath != "" {
+		global, _ = manifest.LoadManifest(globalPath)
+	}
 
 	switch resType {
 	case ResourceSkills:
@@ -270,6 +285,48 @@ func ShowResourceDetail(projectDir, globalPath, kind, name string) (ResourceDeta
 			}
 		}
 		return ResourceDetailResult{}, fmt.Errorf("instruction not found: %s", name)
+	case ResourcePrompts:
+		if merged != nil {
+			for _, p := range merged.Prompts {
+				if p.Name == name {
+					content := loadResourceContent(projectDir, merged, string(resType), p.Registry, p.Path)
+					return ResourceDetailResult{
+						Kind:      resType,
+						Name:      name,
+						Installed: true,
+						Registry:  p.Registry,
+						Path:      p.Path,
+						Payload: map[string]any{
+							"name":        p.Name,
+							"path":        p.Path,
+							"registry":    p.Registry,
+							"description": "Prompt template",
+							"content":     content,
+						},
+					}, nil
+				}
+			}
+		}
+		for _, ref := range collectRegistryResourceItems(merged, resType) {
+			if ref.Name == name {
+				content := loadResourceContent(projectDir, merged, string(resType), ref.Registry, ref.Path)
+				return ResourceDetailResult{
+					Kind:      resType,
+					Name:      name,
+					Installed: false,
+					Registry:  ref.Registry,
+					Path:      ref.Path,
+					Payload: map[string]any{
+						"name":        name,
+						"path":        ref.Path,
+						"registry":    ref.Registry,
+						"description": "Prompt template",
+						"content":     content,
+					},
+				}, nil
+			}
+		}
+		return ResourceDetailResult{}, fmt.Errorf("prompt not found: %s", name)
 	case ResourceTargets:
 		if !contains(manifest.ValidTargets, name) {
 			return ResourceDetailResult{}, fmt.Errorf("target not found: %s", name)
@@ -299,15 +356,18 @@ func ShowResourceDetail(projectDir, globalPath, kind, name string) (ResourceDeta
 		}
 		for _, reg := range merged.Registries {
 			if reg.Name == name {
+				state, reason := registrySourceState(name, local, global)
 				return ResourceDetailResult{
 					Kind:      resType,
 					Name:      name,
 					Installed: true,
 					Registry:  reg.Name,
 					Payload: map[string]any{
-						"name":        reg.Name,
-						"description": "Registry source",
-						"content":     formatRegistryDetailContent(reg),
+						"name":          reg.Name,
+						"description":   "Registry source",
+						"content":       formatRegistryDetailContent(reg),
+						"source_state":  state,
+						"source_reason": reason,
 					},
 				}, nil
 			}
@@ -318,30 +378,68 @@ func ShowResourceDetail(projectDir, globalPath, kind, name string) (ResourceDeta
 	}
 }
 
+func findRegistryByName(m *manifest.Manifest, name string) (manifest.RegistryRef, bool) {
+	if m == nil {
+		return manifest.RegistryRef{}, false
+	}
+	for _, r := range m.Registries {
+		if r.Name == name {
+			return r, true
+		}
+	}
+	return manifest.RegistryRef{}, false
+}
+
+func registrySourceState(name string, local, global *manifest.Manifest) (string, string) {
+	lr, hasLocal := findRegistryByName(local, name)
+	gr, hasGlobal := findRegistryByName(global, name)
+
+	if hasLocal {
+		if strings.TrimSpace(lr.URL) == "" {
+			return "local_issue", "local registry is invalid: missing url"
+		}
+		if strings.TrimSpace(lr.Ref) == "" {
+			return "local_issue", "local registry is invalid: missing ref"
+		}
+	}
+
+	if hasLocal && hasGlobal {
+		if strings.TrimSpace(lr.URL) != "" && strings.TrimSpace(gr.URL) != "" && lr.URL != gr.URL {
+			return "local_conflict", "local registry conflicts with global URL"
+		}
+		if lr.Ref != gr.Ref || !reflect.DeepEqual(lr.Paths, gr.Paths) {
+			return "local_override", "local registry overrides global definition"
+		}
+		return "both", "registry is defined in both local and global"
+	}
+	if hasLocal {
+		return "local_only", "registry exists only in local config"
+	}
+	if hasGlobal {
+		return "global_only", "registry is defined in global catalog"
+	}
+	return "unknown", "registry source could not be determined"
+}
+
 func formatRegistryDetailContent(reg manifest.RegistryRef) string {
 	skillsRoot := reg.Paths["skills"]
 	if skillsRoot == "" {
 		skillsRoot = "skills/"
 	}
-	instructionsRoot, instructionsExplicit := reg.Paths["instructions"]
+	instructionsRoot := reg.Paths["instructions"]
 	if instructionsRoot == "" {
-		instructionsRoot = skillsRoot
+		instructionsRoot = "instructions/"
 	}
-	agentsRoot, agentsExplicit := reg.Paths["agents"]
+	agentsRoot := reg.Paths["agents"]
 	if agentsRoot == "" {
-		agentsRoot = skillsRoot
+		agentsRoot = "agents/"
+	}
+	promptsRoot := reg.Paths["prompts"]
+	if promptsRoot == "" {
+		promptsRoot = "prompts/"
 	}
 
-	instructionsSuffix := ""
-	if !instructionsExplicit {
-		instructionsSuffix = " (inherited)"
-	}
-	agentsSuffix := ""
-	if !agentsExplicit {
-		agentsSuffix = " (inherited)"
-	}
-
-	return fmt.Sprintf("URL: %s\nRef: %s\n\npaths:\n- skills: %s\n- instructions: %s%s\n- agents: %s%s", reg.URL, reg.Ref, skillsRoot, instructionsRoot, instructionsSuffix, agentsRoot, agentsSuffix)
+	return fmt.Sprintf("URL: %s\nRef: %s\n\npaths:\n- skills: %s\n- instructions: %s\n- agents: %s\n- prompts: %s", reg.URL, reg.Ref, skillsRoot, instructionsRoot, agentsRoot, promptsRoot)
 }
 
 func loadResourceContent(projectDir string, merged *manifest.Manifest, kind, registryName, path string) string {
@@ -895,6 +993,24 @@ func formatInstructionShow(inst manifest.InstructionRef, installed bool) string 
 	return b.String()
 }
 
+// formatPromptShow renders a prompt's details.
+func formatPromptShow(prompt manifest.PromptRef, installed bool) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Name: %s\n", prompt.Name)
+	if prompt.Path != "" {
+		fmt.Fprintf(&b, "Path: %s\n", prompt.Path)
+	}
+	if prompt.Registry != "" {
+		fmt.Fprintf(&b, "Registry: %s\n", prompt.Registry)
+	}
+	if installed {
+		b.WriteString("Status: installed\n")
+	} else {
+		b.WriteString("Status: available\n")
+	}
+	return b.String()
+}
+
 // --- Collecting items for interactive pickers ---
 
 // collectAvailableSkills returns all skill names from all registries, with
@@ -1068,6 +1184,55 @@ func collectAvailableInstructions(merged *manifest.Manifest) []ResourceItem {
 	return items
 }
 
+func collectPrompts(merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	items := make([]ResourceItem, 0, len(merged.Prompts))
+	for _, p := range merged.Prompts {
+		items = append(items, ResourceItem{Name: p.Name, Installed: true, InstallScope: installScopeLocal})
+	}
+	return items
+}
+
+func collectPromptsWithScope(local, global, merged *manifest.Manifest) []ResourceItem {
+	if merged == nil {
+		return nil
+	}
+	localSet := make(map[string]bool)
+	if local != nil {
+		for _, p := range local.Prompts {
+			localSet[p.Name] = true
+		}
+	}
+	globalSet := make(map[string]bool)
+	if global != nil {
+		for _, p := range global.Prompts {
+			globalSet[p.Name] = true
+		}
+	}
+	items := make([]ResourceItem, 0, len(merged.Prompts))
+	for _, p := range merged.Prompts {
+		items = append(items, ResourceItem{Name: p.Name, Installed: true, InstallScope: resolveInstallScope(localSet[p.Name], globalSet[p.Name])})
+	}
+	return items
+}
+
+func collectAvailablePrompts(merged *manifest.Manifest) []ResourceItem {
+	installed := make(map[string]bool)
+	if merged != nil {
+		for _, p := range merged.Prompts {
+			installed[p.Name] = true
+		}
+	}
+	refs := collectRegistryResourceItems(merged, ResourcePrompts)
+	items := make([]ResourceItem, 0, len(refs))
+	for _, ref := range refs {
+		items = append(items, ResourceItem{Name: ref.Name, Installed: installed[ref.Name], InstallScope: installScopeNone})
+	}
+	return items
+}
+
 func collectTargets(merged *manifest.Manifest) []ResourceItem {
 	if merged == nil {
 		return nil
@@ -1145,7 +1310,12 @@ func collectInstalledRegistriesWithScope(local, global, merged *manifest.Manifes
 	}
 	items := make([]ResourceItem, 0, len(merged.Registries))
 	for _, r := range merged.Registries {
-		items = append(items, ResourceItem{Name: r.Name, Installed: true, InstallScope: resolveInstallScope(localSet[r.Name], globalSet[r.Name])})
+		state, _ := registrySourceState(r.Name, local, global)
+		rowState := ""
+		if state == "local_issue" || state == "local_conflict" {
+			rowState = "registry_attention"
+		}
+		items = append(items, ResourceItem{Name: r.Name, Installed: true, InstallScope: resolveInstallScope(localSet[r.Name], globalSet[r.Name]), State: rowState})
 	}
 	return items
 }
@@ -1213,6 +1383,14 @@ func resourceNameFromPath(resType ResourceType, relPath string) string {
 			return ""
 		}
 		return strings.TrimSuffix(base, ".instructions.md")
+	case ResourcePrompts:
+		if strings.HasSuffix(base, ".prompt.md") {
+			return strings.TrimSuffix(base, ".prompt.md")
+		}
+		if strings.HasSuffix(base, ".md") {
+			return strings.TrimSuffix(base, ".md")
+		}
+		return ""
 	case ResourceAgents:
 		if !strings.HasSuffix(base, ".agent.md") {
 			return ""
@@ -1287,6 +1465,8 @@ func completeResourceNames(resType ResourceType, mode string) []string {
 		return completeAgentNames(merged, mode)
 	case ResourceInstructions:
 		return completeInstructionNames(merged, mode)
+	case ResourcePrompts:
+		return completePromptNames(merged, mode)
 	case ResourceTargets:
 		return completeTargetNames(merged, mode)
 	case ResourceRegistries:
@@ -1364,6 +1544,30 @@ func completeInstructionNames(merged *manifest.Manifest, mode string) []string {
 	default:
 		names := resourceNamesFromItems(collectAvailableInstructions(merged))
 		for _, n := range resourceNamesFromItems(collectInstructions(merged)) {
+			if !contains(names, n) {
+				names = append(names, n)
+			}
+		}
+		return names
+	}
+}
+
+func completePromptNames(merged *manifest.Manifest, mode string) []string {
+	switch mode {
+	case "available":
+		items := collectAvailablePrompts(merged)
+		var names []string
+		for _, item := range items {
+			if !item.Installed {
+				names = append(names, item.Name)
+			}
+		}
+		return names
+	case "installed":
+		return resourceNamesFromItems(collectPrompts(merged))
+	default:
+		names := resourceNamesFromItems(collectAvailablePrompts(merged))
+		for _, n := range resourceNamesFromItems(collectPrompts(merged)) {
 			if !contains(names, n) {
 				names = append(names, n)
 			}

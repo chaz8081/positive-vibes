@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ const (
 	KindSkill       ApplyOpKind = "skill"
 	KindInstruction ApplyOpKind = "instruction"
 	KindAgent       ApplyOpKind = "agent"
+	KindPrompt      ApplyOpKind = "prompt"
 )
 
 // ApplyOp records the result of installing one item to one target.
@@ -295,6 +297,71 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		}
 
 		// Clean up temp file after installing to all targets
+		if tempFile != "" {
+			_ = os.Remove(tempFile)
+		}
+	}
+
+	// iterate prompts
+	for _, prompt := range m.Prompts {
+		sourcePath := prompt.Path
+		if prompt.Registry == "" && sourcePath != "" && !filepath.IsAbs(sourcePath) {
+			sourcePath = filepath.Join(projectDir, sourcePath)
+		}
+
+		var tempFile string
+		if prompt.Registry != "" {
+			data, fetchErr := a.fetchResourceFileFromRegistry(prompt.Registry, "prompts", prompt.Path)
+			if fetchErr != nil {
+				errMsg := fmt.Sprintf("prompt %s: fetch from registry: %v", prompt.Name, fetchErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{SkillName: prompt.Name, Kind: KindPrompt, Status: OpError, Error: errMsg})
+				continue
+			}
+			tmp, tmpErr := writeTempResourceFile(projectDir, "pv-prompt-*", data)
+			if tmpErr != nil {
+				errMsg := fmt.Sprintf("prompt %s: create temp file: %v", prompt.Name, tmpErr)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{SkillName: prompt.Name, Kind: KindPrompt, Status: OpError, Error: errMsg})
+				continue
+			}
+			tempFile = tmp
+			sourcePath = tempFile
+		}
+
+		for _, t := range targets {
+			if err := t.InstallPrompt(prompt.Name, sourcePath, projectDir, opts); err != nil {
+				if errors.Is(err, target.ErrPromptInstallUnsupported) {
+					res.Skipped++
+					res.Ops = append(res.Ops, ApplyOp{
+						SkillName:  prompt.Name,
+						TargetName: t.Name(),
+						Kind:       KindPrompt,
+						Status:     OpSkipped,
+						Error:      err.Error(),
+					})
+					continue
+				}
+				errMsg := fmt.Sprintf("install prompt %s -> %s: %v", prompt.Name, t.Name(), err)
+				res.Errors = append(res.Errors, errMsg)
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  prompt.Name,
+					TargetName: t.Name(),
+					Kind:       KindPrompt,
+					Status:     OpError,
+					Error:      errMsg,
+				})
+			} else {
+				res.Installed++
+				res.Ops = append(res.Ops, ApplyOp{
+					SkillName:  prompt.Name,
+					TargetName: t.Name(),
+					Kind:       KindPrompt,
+					Status:     OpInstalled,
+				})
+			}
+		}
+
 		if tempFile != "" {
 			_ = os.Remove(tempFile)
 		}

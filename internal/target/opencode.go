@@ -13,6 +13,7 @@ func (OpenCodeTarget) Name() string           { return "opencode" }
 func (OpenCodeTarget) SkillDir() string       { return filepath.Join(".opencode", "skills") }
 func (OpenCodeTarget) InstructionDir() string { return filepath.Join(".opencode", "instructions") }
 func (OpenCodeTarget) AgentDir() string       { return filepath.Join(".opencode", "agents") }
+func (OpenCodeTarget) PromptDir() string      { return filepath.Join(".opencode", "commands") }
 
 func (t OpenCodeTarget) Install(skill *schema.Skill, sourceDir string, projectRoot string, opts InstallOpts) error {
 	return installGeneric(skill, sourceDir, projectRoot, t.SkillDir(), opts)
@@ -33,4 +34,8 @@ func (t OpenCodeTarget) InstallInstruction(name, content, sourcePath, projectRoo
 
 func (t OpenCodeTarget) InstallAgent(name, sourcePath, projectRoot string, opts InstallOpts) error {
 	return installAgentGeneric(name, sourcePath, projectRoot, t.AgentDir(), opts)
+}
+
+func (t OpenCodeTarget) InstallPrompt(name, sourcePath, projectRoot string, opts InstallOpts) error {
+	return installPromptGeneric(name, sourcePath, projectRoot, t.PromptDir(), ".md", opts)
 }

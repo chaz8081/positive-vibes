@@ -108,6 +108,7 @@ func gitRegistriesFromManifest(m *manifest.Manifest) []registry.SkillSource {
 			SkillsPath:       r.SkillsPath(),
 			InstructionsPath: r.InstructionsPath(),
 			AgentsPath:       r.AgentsPath(),
+			PromptsPath:      r.PromptsPath(),
 			Ref:              r.Ref,
 		})
 	}

@@ -122,6 +122,16 @@ func TestValidate_AgentOnly_Valid(t *testing.T) {
 	require.NoError(t, m.Validate())
 }
 
+func TestManifestValidate_PromptsRequirePath(t *testing.T) {
+	m := &Manifest{
+		Prompts: []PromptRef{{Name: "release-checklist"}},
+		Targets: []string{"opencode"},
+	}
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected validate error when prompt path missing")
+	}
+}
+
 func TestValidate_SkillRegistryRequiresPath(t *testing.T) {
 	m := &Manifest{
 		Skills:  []SkillRef{{Name: "s", Registry: "team"}},
@@ -196,6 +206,14 @@ targets:
 	m, err := LoadManifestFromBytes([]byte(yamlStr))
 	require.NoError(t, err)
 	assert.Equal(t, "v1.2.0", m.Registries[0].Ref)
+}
+
+func TestRegistryRef_DefaultPaths_AreResourceSpecific(t *testing.T) {
+	r := RegistryRef{}
+	assert.Equal(t, "skills/", r.SkillsPath())
+	assert.Equal(t, "instructions/", r.InstructionsPath())
+	assert.Equal(t, "agents/", r.AgentsPath())
+	assert.Equal(t, "prompts/", r.PromptsPath())
 }
 
 func TestSaveManifest_RefFieldRoundTrip(t *testing.T) {

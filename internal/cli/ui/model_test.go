@@ -214,6 +214,263 @@ func TestModel_BrowserLeftRightDoesNotSwitchCategory(t *testing.T) {
 	}
 }
 
+func TestModel_BrowserHorizontalKeysSwitchPaneFocus(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railInstructions
+	m.previewFocused = false
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if !m.previewFocused {
+		t.Fatal("expected right arrow to focus preview pane")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.previewFocused {
+		t.Fatal("expected left arrow to focus list pane")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if !m.previewFocused {
+		t.Fatal("expected l to focus preview pane")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	if m.previewFocused {
+		t.Fatal("expected h to focus list pane")
+	}
+}
+
+func TestModel_DetailSkillsHorizontalKeysSwitchPaneFocus(t *testing.T) {
+	m := newModel()
+	m.screen = screenDetail
+	m.activeRail = railSkills
+	m.detailFiles = []detailFile{{Name: "SKILL.md", Content: "line1\nline2\nline3"}}
+	m.previewFocused = false
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if !m.previewFocused {
+		t.Fatal("expected right arrow to focus preview pane in skill detail")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.previewFocused {
+		t.Fatal("expected left arrow to focus file pane in skill detail")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if !m.previewFocused {
+		t.Fatal("expected l to focus preview pane in skill detail")
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	if m.previewFocused {
+		t.Fatal("expected h to focus file pane in skill detail")
+	}
+}
+
+func TestModel_DetailSkillsPreviewFocused_UsesJKToScrollPreview(t *testing.T) {
+	m := newModel()
+	m.screen = screenDetail
+	m.activeRail = railSkills
+	m.height = 8
+	m.detailFiles = []detailFile{{
+		Name:    "SKILL.md",
+		Content: "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10",
+	}}
+	m.previewFocused = true
+	m.syncPreviewViewport()
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.previewOffset == 0 {
+		t.Fatal("expected j to scroll preview down when preview is focused")
+	}
+
+	before := m.previewOffset
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if m.previewOffset >= before {
+		t.Fatalf("expected k to scroll preview up when preview is focused, before=%d after=%d", before, m.previewOffset)
+	}
+}
+
+func TestModel_BrowserVerticalMovementUsesFocusedPane(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railInstructions
+	m.setRows([]ResourceRow{
+		{Name: "one", Installed: true, InstallScope: "local"},
+		{Name: "two", Installed: true, InstallScope: "local"},
+	})
+	m.cursor = 0
+
+	m.previewFocused = false
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	if m.cursor != 1 {
+		t.Fatalf("expected down to move list cursor when list focused, got %d", m.cursor)
+	}
+
+	m.height = 8
+	m.previewFocused = true
+	m.previewDetail = ResourceDetail{Payload: map[string]any{"description": "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"}}
+	m.previewOffset = 0
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyDown})
+	if m.previewOffset == 0 {
+		t.Fatal("expected down to scroll preview when preview focused")
+	}
+}
+
+func TestModel_BrowserEnterNoOpForSingleFileResources(t *testing.T) {
+	kinds := []railTab{railInstructions, railPrompts, railAgents}
+	for _, rail := range kinds {
+		m := newModel()
+		m.screen = screenBrowser
+		m.activeRail = rail
+		m.setRows([]ResourceRow{{Name: "alpha", Installed: true, InstallScope: "local"}})
+
+		called := false
+		m.showResource = func(kind, name string) (ResourceDetail, error) {
+			called = true
+			return ResourceDetail{Kind: kind, Name: name, Installed: true, Payload: map[string]any{"description": "x"}}, nil
+		}
+
+		m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+		if m.screen != screenBrowser {
+			t.Fatalf("expected enter to keep browser for rail %v, got %v", rail, m.screen)
+		}
+		if called {
+			t.Fatalf("expected enter to be no-op for rail %v", rail)
+		}
+	}
+}
+
+func TestModel_BrowserEnterStillDrillsInForSkills(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railSkills
+	m.setRows([]ResourceRow{{Name: "alpha", Installed: true, InstallScope: "local"}})
+	m.showResource = func(kind, name string) (ResourceDetail, error) {
+		return ResourceDetail{Kind: kind, Name: name, Installed: true, Payload: map[string]any{"description": "skill", "files": []map[string]any{{"name": "SKILL.md", "content": "one"}, {"name": "extra.md", "content": "two"}}}}, nil
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.screen != screenDetail {
+		t.Fatalf("expected enter to open detail for skills, got %v", m.screen)
+	}
+}
+
+func TestModel_BrowserEnterNoOpForSingleFileSkill(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railSkills
+	m.setRows([]ResourceRow{{Name: "solo", Installed: true, InstallScope: "local"}})
+	m.showResource = func(kind, name string) (ResourceDetail, error) {
+		return ResourceDetail{Kind: kind, Name: name, Installed: true, Payload: map[string]any{"description": "skill", "files": []map[string]any{{"name": "SKILL.md", "content": "# title\nbody"}}}}, nil
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.screen != screenBrowser {
+		t.Fatalf("expected enter to stay in browser for single-file skill, got %v", m.screen)
+	}
+}
+
+func TestModel_BrowserPreviewUsesContentForSingleFileResources(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rail railTab
+	}{
+		{name: "instructions", rail: railInstructions},
+		{name: "prompts", rail: railPrompts},
+		{name: "agents", rail: railAgents},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newModel()
+			m.screen = screenBrowser
+			m.activeRail = tc.rail
+			m.previewDetail = ResourceDetail{Payload: map[string]any{
+				"description": "short summary",
+				"content":     "full file content\nline two",
+			}}
+
+			text := m.currentPreviewText()
+			if !strings.Contains(text, "full file content") {
+				t.Fatalf("expected browser preview to use content for %s, got %q", tc.name, text)
+			}
+		})
+	}
+}
+
+func TestModel_BrowserPreviewUsesContentForSingleFileSkill(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railSkills
+	m.previewDetail = ResourceDetail{Payload: map[string]any{
+		"description": "summary",
+		"files": []map[string]any{{
+			"name":    "SKILL.md",
+			"content": "# Heading\n- item",
+		}},
+	}}
+
+	text := m.currentPreviewText()
+	if !strings.Contains(text, "# Heading") {
+		t.Fatalf("expected single-file skill preview to use full file content, got %q", text)
+	}
+}
+
+func TestModel_BrowserPreviewFileMetaUsesDetailPathForSingleFileResources(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railPrompts
+	m.previewDetail = ResourceDetail{Kind: resourceKindPrompts, Path: "./prompts/release.prompt.md"}
+
+	filename, _ := m.currentPreviewFileMeta()
+	if filename != "release.prompt.md" {
+		t.Fatalf("expected preview filename from detail path, got %q", filename)
+	}
+}
+
+func TestView_BrowserSingleFilePreviewHidesMetadataHeader(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railInstructions
+	m.width = 90
+	m.height = 18
+	m.previewDetail = ResourceDetail{
+		Kind: resourceKindInstructions,
+		Name: "repo-guidelines",
+		Path: "./instructions/repo-guidelines.md",
+		Payload: map[string]any{
+			"content": "# Heading\n- item",
+		},
+	}
+
+	view := xansi.Strip(m.View())
+	if strings.Contains(view, "kind: instructions") || strings.Contains(view, "repo-guidelines") {
+		t.Fatalf("expected single-file preview pane without metadata header, got %q", view)
+	}
+}
+
+func TestView_BrowserSingleFileSkillPreviewHidesMetadataHeader(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railSkills
+	m.width = 90
+	m.height = 18
+	m.previewDetail = ResourceDetail{
+		Kind: resourceKindSkills,
+		Name: "agentic-eval",
+		Payload: map[string]any{
+			"description": "summary",
+			"files":       []map[string]any{{"name": "SKILL.md", "content": "# Skill\ncontent"}},
+		},
+	}
+
+	view := xansi.Strip(m.View())
+	if strings.Contains(view, "kind: skills") || strings.Contains(view, "agentic-eval") {
+		t.Fatalf("expected single-file skill preview pane without metadata header, got %q", view)
+	}
+}
+
 func TestView_FooterPinnedToBottom(t *testing.T) {
 	m := newModel()
 	m.screen = screenHome
@@ -307,7 +564,7 @@ func TestModel_HomeScreenShowsInstalledNamesAndEnterOpensBrowser(t *testing.T) {
 		t.Fatalf("expected installed-only skills in home card, got %#v", m.homeInstalled[resourceKindSkills])
 	}
 
-	m.homeCursor = 2
+	m.homeCursor = 3
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.screen != screenBrowser {
 		t.Fatalf("expected browser screen after enter, got %v", m.screen)
@@ -531,22 +788,31 @@ func TestModel_EscOnHomeWithHelpOpen_QuitsInOneKeypress(t *testing.T) {
 	}
 }
 
-func TestModel_DetailSkills_JKNavigateFileListEvenWhenPreviewFocused(t *testing.T) {
+func TestModel_DetailSkills_JKScrollPreviewWhenPreviewFocused(t *testing.T) {
 	m := newModel()
 	m.screen = screenDetail
 	m.showDetailModal = true
 	m.activeRail = railSkills
 	m.previewFocused = true
-	m.detailFiles = []detailFile{{Name: "a.md", Content: "a"}, {Name: "b.md", Content: "b"}, {Name: "c.md", Content: "c"}}
+	m.height = 8
+	m.detailFiles = []detailFile{{Name: "a.md", Content: "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"}, {Name: "b.md", Content: "b"}, {Name: "c.md", Content: "c"}}
 	m.detailCursor = 0
+	m.syncPreviewViewport()
 
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	if m.detailCursor != 1 {
-		t.Fatalf("expected j to move file cursor down in detail skills, got %d", m.detailCursor)
+	if m.detailCursor != 0 {
+		t.Fatalf("expected j to keep file cursor when preview focused, got %d", m.detailCursor)
 	}
+	if m.previewOffset == 0 {
+		t.Fatal("expected j to scroll preview when preview focused")
+	}
+	before := m.previewOffset
 	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	if m.detailCursor != 0 {
-		t.Fatalf("expected k to move file cursor up in detail skills, got %d", m.detailCursor)
+		t.Fatalf("expected k to keep file cursor when preview focused, got %d", m.detailCursor)
+	}
+	if m.previewOffset >= before {
+		t.Fatalf("expected k to scroll preview up when preview focused, before=%d after=%d", before, m.previewOffset)
 	}
 }
 
@@ -643,8 +909,8 @@ func TestView_FooterPinnedToBottom_NarrowTerminal(t *testing.T) {
 	if lastLine == "" {
 		t.Fatal("expected footer text on final line")
 	}
-	if !strings.Contains(lastLine, ":") {
-		t.Fatalf("expected final line to look like footer hints, got %q", lines[len(lines)-1])
+	if xansi.Strip(lines[len(lines)-1]) == "" {
+		t.Fatalf("expected visible footer content on final line, got %q", lines[len(lines)-1])
 	}
 }
 
@@ -861,12 +1127,16 @@ func TestView_BrowserUsesHomePaneRatio(t *testing.T) {
 	}
 }
 
-func TestModel_HomeIncludesTargetsCategory(t *testing.T) {
+func TestModel_HomeIncludesPromptsTargetsAndRegistriesCategories(t *testing.T) {
 	m := newModel()
 	kinds := m.homeKinds()
+	foundPrompts := false
 	foundTargets := false
 	foundRegistries := false
 	for _, kind := range kinds {
+		if kind == "prompts" {
+			foundPrompts = true
+		}
 		if kind == "targets" {
 			foundTargets = true
 		}
@@ -874,8 +1144,163 @@ func TestModel_HomeIncludesTargetsCategory(t *testing.T) {
 			foundRegistries = true
 		}
 	}
-	if !foundTargets || !foundRegistries {
-		t.Fatalf("expected home categories to include targets, got %#v", kinds)
+	if !foundPrompts || !foundTargets || !foundRegistries {
+		t.Fatalf("expected home categories to include prompts/targets/registries, got %#v", kinds)
+	}
+}
+
+func TestModel_EnteringRegistriesRail_AutoPromotesAndShowsSummary(t *testing.T) {
+	m := newModel()
+	m.screen = screenHome
+	m.listResources = func(kind string) ([]ResourceRow, error) {
+		if kind == resourceKindRegistries {
+			return []ResourceRow{{Name: "team-reg", Installed: true, InstallScope: "global"}}, nil
+		}
+		return nil, nil
+	}
+	m.promoteLocalRegistries = func() (RegistryPromotionResult, error) {
+		return RegistryPromotionResult{
+			PromotedNames: []string{"team-reg"},
+			Skipped:       []RegistryPromotionSkip{{Name: "broken", Reason: "missing ref"}},
+		}, nil
+	}
+
+	for i, kind := range m.homeKinds() {
+		if kind == resourceKindRegistries {
+			m.homeCursor = i
+			break
+		}
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.screen != screenBrowser {
+		t.Fatalf("expected browser screen, got %v", m.screen)
+	}
+	if m.activeKind() != resourceKindRegistries {
+		t.Fatalf("expected registries rail, got %s", m.activeKind())
+	}
+	if !strings.Contains(m.statusMessage, "promoted 1") || !strings.Contains(m.statusMessage, "skipped 1") {
+		t.Fatalf("expected registry sync summary status, got %q", m.statusMessage)
+	}
+}
+
+func TestModel_RegistriesAttentionRowSpaceOpensFixDialog(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railRegistries
+	m.setRows([]ResourceRow{{
+		Name:         "team-reg",
+		Installed:    true,
+		InstallScope: "local",
+		State:        "registry_attention",
+		Description:  "local registry is invalid: missing ref",
+	}})
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	if !m.showRegistryFix {
+		t.Fatal("expected registry fix dialog to open")
+	}
+	if m.registryFixName != "team-reg" {
+		t.Fatalf("expected dialog name team-reg, got %q", m.registryFixName)
+	}
+}
+
+func TestView_RegistriesAttentionRowShowsLBangMarker(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railRegistries
+	m.width = 90
+	m.height = 18
+	m.setRows([]ResourceRow{{
+		Name:         "team-reg",
+		Installed:    true,
+		InstallScope: "local",
+		State:        "registry_attention",
+	}})
+
+	view := m.View()
+	if !strings.Contains(xansi.Strip(view), "L!") {
+		t.Fatalf("expected attention marker L! in view, got %q", view)
+	}
+}
+
+func TestModel_TargetsRKeyResetsLocalOverride(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railTargets
+
+	local := map[string]bool{"opencode": true, "cursor": true}
+	global := map[string]bool{"cursor": true, "vscode-copilot": true}
+	rowsForState := func() []ResourceRow {
+		all := []string{"opencode", "cursor", "vscode-copilot"}
+		rows := make([]ResourceRow, 0, len(all))
+		for _, name := range all {
+			scope := "none"
+			installed := false
+			if local[name] && global[name] {
+				scope = "both"
+				installed = true
+			} else if local[name] {
+				scope = "local"
+				installed = true
+			} else if global[name] {
+				scope = "global"
+				installed = true
+			}
+			rows = append(rows, ResourceRow{Name: name, Installed: installed, InstallScope: scope})
+		}
+		return rows
+	}
+	m.listResources = func(kind string) ([]ResourceRow, error) { return rowsForState(), nil }
+	m.removeResources = func(kind string, names []string) error {
+		for _, n := range names {
+			delete(local, n)
+		}
+		return nil
+	}
+	m.setRows(rowsForState())
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+	if local["opencode"] || local["cursor"] {
+		t.Fatalf("expected local targets cleared, got %#v", local)
+	}
+	if len(m.filteredRows) == 0 {
+		t.Fatal("expected rows after reset")
+	}
+}
+
+func TestModel_TargetsFirstLocalMutationRequiresConfirm(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	m.activeRail = railTargets
+	rows := []ResourceRow{{Name: "opencode", Installed: true, InstallScope: "global"}}
+	m.setRows(rows)
+
+	installedLocally := false
+	m.installResources = func(kind string, names []string) error {
+		installedLocally = true
+		return nil
+	}
+	m.listResources = func(kind string) ([]ResourceRow, error) {
+		scope := "global"
+		if installedLocally {
+			scope = "both"
+		}
+		return []ResourceRow{{Name: "opencode", Installed: true, InstallScope: scope}}, nil
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	if installedLocally {
+		t.Fatal("expected first space to only arm confirmation")
+	}
+	if !strings.Contains(m.statusMessage, "press space again") {
+		t.Fatalf("expected confirmation status message, got %q", m.statusMessage)
+	}
+
+	m = updateWithKey(t, m, tea.KeyMsg{Type: tea.KeySpace})
+	if !installedLocally {
+		t.Fatal("expected second space to mutate targets locally")
 	}
 }
 
@@ -1067,6 +1492,36 @@ func TestFooterText_IncludesScopeLegend(t *testing.T) {
 	}
 	if !strings.Contains(text, "local") || !strings.Contains(text, "global") || !strings.Contains(text, "both") {
 		t.Fatalf("expected footer legend labels, got %q", text)
+	}
+}
+
+func TestFooterText_BrowserMentionsHorizontalFocusKeys(t *testing.T) {
+	m := newModel()
+	m.screen = screenBrowser
+	text := m.footerText()
+	if !strings.Contains(text, "h/l") || !strings.Contains(text, "left/right") {
+		t.Fatalf("expected footer to mention horizontal focus keys, got %q", text)
+	}
+}
+
+func TestHelpText_EnterIsSkillsOnly(t *testing.T) {
+	m := newModel()
+	help := xansi.Strip(m.renderHelp(80))
+	if !strings.Contains(help, "enter: multi-file skills detail") {
+		t.Fatalf("expected help text to clarify enter behavior, got %q", help)
+	}
+}
+
+func TestFooterText_DetailMentionsHorizontalAndVerticalNavKeys(t *testing.T) {
+	m := newModel()
+	m.screen = screenDetail
+	m.activeRail = railSkills
+	text := m.footerText()
+	if !strings.Contains(text, "left/right") || !strings.Contains(text, "h/l") {
+		t.Fatalf("expected detail footer to mention horizontal keys, got %q", text)
+	}
+	if !strings.Contains(text, "up/down") || !strings.Contains(text, "j/k") {
+		t.Fatalf("expected detail footer to mention vertical keys, got %q", text)
 	}
 }
 

@@ -25,6 +25,7 @@ type railTab int
 const (
 	railSkills railTab = iota
 	railInstructions
+	railPrompts
 	railAgents
 	railTargets
 	railRegistries
@@ -39,32 +40,39 @@ const (
 )
 
 type model struct {
-	screen           uiScreen
-	homeCursor       int
-	activeRail       railTab
-	cursor           int
-	showHelp         bool
-	showSearch       bool
-	searchQuery      string
-	showDetailModal  bool
-	statusMessage    string
-	browserHintShown bool
-	width            int
-	height           int
-	rows             []ResourceRow
-	filteredRows     []ResourceRow
-	items            []string
-	keys             keyMap
-	showDetail       ResourceDetail
-	previewDetail    ResourceDetail
-	previewOffset    int
-	previewViewport  viewport.Model
-	previewFocused   bool
-	detailCursor     int
-	detailFiles      []detailFile
-	homeInstalled    map[string][]string
-	detailCache      map[string]ResourceDetail
-	previewCache     map[previewRenderCacheKey]string
+	screen              uiScreen
+	homeCursor          int
+	activeRail          railTab
+	cursor              int
+	showHelp            bool
+	showSearch          bool
+	searchQuery         string
+	showDetailModal     bool
+	showRegistryFix     bool
+	registryFixName     string
+	registryFixReason   string
+	registryFixOptions  []string
+	registryFixCursor   int
+	targetOverrideArmed bool
+	targetOverrideName  string
+	statusMessage       string
+	browserHintShown    bool
+	width               int
+	height              int
+	rows                []ResourceRow
+	filteredRows        []ResourceRow
+	items               []string
+	keys                keyMap
+	showDetail          ResourceDetail
+	previewDetail       ResourceDetail
+	previewOffset       int
+	previewViewport     viewport.Model
+	previewFocused      bool
+	detailCursor        int
+	detailFiles         []detailFile
+	homeInstalled       map[string][]string
+	detailCache         map[string]ResourceDetail
+	previewCache        map[previewRenderCacheKey]string
 
 	listResources          func(kind string) ([]ResourceRow, error)
 	showResource           func(kind, name string) (ResourceDetail, error)
@@ -72,6 +80,7 @@ type model struct {
 	removeResources        func(kind string, names []string) error
 	installResourcesGlobal func(kind string, names []string) error
 	removeResourcesGlobal  func(kind string, names []string) error
+	promoteLocalRegistries func() (RegistryPromotionResult, error)
 }
 
 type detailFile struct {
@@ -99,6 +108,7 @@ func newModel() model {
 		showHelp:        false,
 		showSearch:      false,
 		showDetailModal: false,
+		showRegistryFix: false,
 		width:           96,
 		height:          24,
 		rows:            rows,
@@ -108,6 +118,7 @@ func newModel() model {
 		homeInstalled: map[string][]string{
 			resourceKindSkills:       {},
 			resourceKindInstructions: {},
+			resourceKindPrompts:      {},
 			resourceKindAgents:       {},
 			resourceKindTargets:      {},
 			resourceKindRegistries:   {},
@@ -133,6 +144,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 	case tea.KeyMsg:
+		if m.showRegistryFix {
+			switch {
+			case msg.Type == tea.KeyEsc:
+				m.showRegistryFix = false
+				return m, nil
+			case key.Matches(msg, m.keys.CursorDown):
+				if m.registryFixCursor < len(m.registryFixOptions)-1 {
+					m.registryFixCursor++
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.CursorUp):
+				if m.registryFixCursor > 0 {
+					m.registryFixCursor--
+				}
+				return m, nil
+			case msg.Type == tea.KeyEnter:
+				choice := ""
+				if m.registryFixCursor >= 0 && m.registryFixCursor < len(m.registryFixOptions) {
+					choice = m.registryFixOptions[m.registryFixCursor]
+				}
+				switch choice {
+				case "Promote now":
+					if m.promoteLocalRegistries != nil {
+						report, err := m.promoteLocalRegistries()
+						if err != nil {
+							m.statusMessage = fmt.Sprintf("registry sync failed: %v", err)
+						} else {
+							m.statusMessage = fmt.Sprintf("registry sync: promoted %d, skipped %d", len(report.PromotedNames), len(report.Skipped))
+						}
+						m.refreshRowsForActiveRail()
+						m.applyFilter()
+					}
+				case "Show fix hint":
+					m.statusMessage = fmt.Sprintf("fix %s: %s (edit local vibes.yaml)", m.registryFixName, m.registryFixReason)
+				case "Rename local registry":
+					m.statusMessage = fmt.Sprintf("rename %s in local vibes.yaml to resolve conflict", m.registryFixName)
+				}
+				m.showRegistryFix = false
+				return m, nil
+			}
+		}
+
 		if m.showSearch {
 			switch msg.Type {
 			case tea.KeyEsc:
@@ -172,7 +225,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.screen == screenDetail {
-			if m.activeKind() == resourceKindSkills && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			if m.activeKind() == resourceKindSkills && !m.previewFocused && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 				switch msg.Runes[0] {
 				case 'j':
 					if m.detailCursor < len(m.detailFiles)-1 {
@@ -192,6 +245,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case key.Matches(msg, m.keys.CloseHelp):
 				m.closeShowModal()
+				return m, nil
+			case key.Matches(msg, m.keys.LeftRail):
+				if m.activeKind() == resourceKindSkills {
+					m.previewFocused = false
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.RightRail):
+				if m.activeKind() == resourceKindSkills {
+					m.previewFocused = true
+				}
 				return m, nil
 			case key.Matches(msg, m.keys.ToggleFocus):
 				if m.activeKind() == resourceKindSkills {
@@ -287,13 +350,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.screen == screenBrowser {
+			if key.Matches(msg, m.keys.LeftRail) {
+				m.previewFocused = false
+				return m, nil
+			}
+			if key.Matches(msg, m.keys.RightRail) {
+				m.previewFocused = true
+				return m, nil
+			}
+		}
+
 		if key.Matches(msg, m.keys.Search) {
 			m.showSearch = true
 			return m, nil
 		}
 
 		if msg.Type == tea.KeySpace {
+			if m.activeKind() == resourceKindRegistries && len(m.filteredRows) > 0 && m.cursor >= 0 && m.cursor < len(m.filteredRows) {
+				row := m.filteredRows[m.cursor]
+				if row.State == "registry_attention" {
+					m.showRegistryFix = true
+					m.registryFixName = row.Name
+					m.registryFixReason = row.Description
+					m.registryFixOptions = []string{"Promote now", "Show fix hint", "Rename local registry", "Cancel"}
+					m.registryFixCursor = 0
+					return m, nil
+				}
+			}
 			m.toggleSelectedResourceInstalled()
+			return m, nil
+		}
+
+		if key.Matches(msg, m.keys.ResetTargets) && m.activeKind() == resourceKindTargets && m.screen == screenBrowser && !m.previewFocused {
+			m.resetLocalTargetsOverride()
 			return m, nil
 		}
 
@@ -303,6 +393,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.Type == tea.KeyEnter {
+			kind := m.activeKind()
+			if kind == resourceKindInstructions || kind == resourceKindPrompts || kind == resourceKindAgents {
+				return m, nil
+			}
+			if kind == resourceKindSkills {
+				if m.showResource != nil && len(m.filteredRows) > 0 && m.cursor >= 0 && m.cursor < len(m.filteredRows) {
+					selected := m.filteredRows[m.cursor]
+					detail, err := m.ensureDetail(kind, selected.Name)
+					if err == nil {
+						files := detailFilesFromDetail(detail)
+						if len(files) == 1 {
+							return m, nil
+						}
+					}
+				}
+			}
 			m.openShowModal()
 			return m, nil
 		}
@@ -358,9 +464,23 @@ func (m *model) openBrowserFromHome() {
 	m.previewOffset = 0
 	m.searchQuery = ""
 	m.showSearch = false
+	if kind == resourceKindRegistries && m.promoteLocalRegistries != nil {
+		report, err := m.promoteLocalRegistries()
+		if err != nil {
+			m.statusMessage = fmt.Sprintf("registry sync failed: %v", err)
+		} else {
+			promoted := len(report.PromotedNames)
+			skipped := len(report.Skipped)
+			if promoted > 0 || skipped > 0 {
+				m.statusMessage = fmt.Sprintf("registry sync: promoted %d, skipped %d", promoted, skipped)
+			}
+		}
+	}
 	m.refreshRowsForActiveRail()
 	if !m.browserHintShown {
-		m.statusMessage = "tip: space cycles install scope; esc goes back"
+		if m.statusMessage == "" {
+			m.statusMessage = "tip: space cycles install scope; esc goes back"
+		}
 		m.browserHintShown = true
 	}
 }
@@ -399,13 +519,15 @@ func (m *model) refreshHomeInstalled() {
 }
 
 func (m model) homeKinds() []string {
-	return []string{resourceKindSkills, resourceKindInstructions, resourceKindAgents, resourceKindTargets, resourceKindRegistries}
+	return []string{resourceKindSkills, resourceKindInstructions, resourceKindPrompts, resourceKindAgents, resourceKindTargets, resourceKindRegistries}
 }
 
 func kindToRail(kind string) railTab {
 	switch kind {
 	case resourceKindInstructions:
 		return railInstructions
+	case resourceKindPrompts:
+		return railPrompts
 	case resourceKindAgents:
 		return railAgents
 	case resourceKindTargets:
@@ -426,6 +548,16 @@ func (m *model) toggleSelectedResourceInstalled() {
 	}
 	selected := m.filteredRows[m.cursor]
 	kind := m.activeKind()
+	if kind == resourceKindTargets && m.needsTargetOverrideConfirmation(selected) {
+		if !m.targetOverrideArmed || m.targetOverrideName != selected.Name {
+			m.targetOverrideArmed = true
+			m.targetOverrideName = selected.Name
+			m.statusMessage = "press space again to create local targets override"
+			return
+		}
+		m.targetOverrideArmed = false
+		m.targetOverrideName = ""
+	}
 	scope := selected.InstallScope
 	if scope == "" {
 		scope = "none"
@@ -502,6 +634,56 @@ func (m *model) toggleSelectedResourceInstalled() {
 		}
 	}
 	m.updatePreviewForSelection()
+}
+
+func (m *model) resetLocalTargetsOverride() {
+	if m.activeKind() != resourceKindTargets {
+		return
+	}
+	if m.removeResources == nil {
+		m.statusMessage = "backend unavailable: remove action requires resource service"
+		return
+	}
+	localNames := make([]string, 0)
+	seen := map[string]bool{}
+	for _, row := range m.rows {
+		if row.InstallScope != "local" && row.InstallScope != "both" {
+			continue
+		}
+		if seen[row.Name] {
+			continue
+		}
+		seen[row.Name] = true
+		localNames = append(localNames, row.Name)
+	}
+	if len(localNames) == 0 {
+		m.statusMessage = "targets already inherited from global"
+		return
+	}
+	if err := m.removeResources(resourceKindTargets, localNames); err != nil {
+		m.statusMessage = fmt.Sprintf("reset targets failed: %v", err)
+		return
+	}
+	if !m.refreshRowsForActiveRail() {
+		return
+	}
+	m.applyFilter()
+	m.statusMessage = "reset targets to inherited global defaults"
+}
+
+func (m *model) needsTargetOverrideConfirmation(selected ResourceRow) bool {
+	if m.activeKind() != resourceKindTargets {
+		return false
+	}
+	if selected.InstallScope == "local" || selected.InstallScope == "both" {
+		return false
+	}
+	for _, row := range m.rows {
+		if row.InstallScope == "local" || row.InstallScope == "both" {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *model) openShowModal() {
@@ -586,6 +768,9 @@ func detailDescription(detail ResourceDetail) string {
 	case *schema.Skill:
 		return p.Description
 	case map[string]any:
+		if reason, ok := p["source_reason"].(string); ok && reason != "" {
+			return reason
+		}
 		if desc, ok := p["description"].(string); ok {
 			return desc
 		}
@@ -685,6 +870,24 @@ func (m model) previewViewportHeight() int {
 
 func (m model) currentPreviewText() string {
 	if m.screen == screenBrowser {
+		kind := m.activeKind()
+		if kind == resourceKindInstructions || kind == resourceKindPrompts || kind == resourceKindAgents {
+			content := contentFromDetail(m.previewDetail)
+			if content != "" {
+				return content
+			}
+		}
+		if kind == resourceKindSkills {
+			files := detailFilesFromDetail(m.previewDetail)
+			if len(files) == 1 {
+				if files[0].Binary {
+					return "binary/unpreviewable file"
+				}
+				if files[0].Content != "" {
+					return files[0].Content
+				}
+			}
+		}
 		desc := detailDescription(m.previewDetail)
 		if desc == "" {
 			return "(no description)"
@@ -736,6 +939,26 @@ func (m model) currentPreviewFileMeta() (string, bool) {
 		return f.Name, f.Binary
 	}
 	if m.screen == screenBrowser {
+		kind := m.activeKind()
+		if kind == resourceKindInstructions || kind == resourceKindPrompts || kind == resourceKindAgents {
+			if p := strings.TrimSpace(m.previewDetail.Path); p != "" {
+				return filepath.Base(p), false
+			}
+			switch kind {
+			case resourceKindInstructions:
+				return "instruction.md", false
+			case resourceKindPrompts:
+				return "prompt.md", false
+			case resourceKindAgents:
+				return "agent.md", false
+			}
+		}
+		if kind == resourceKindSkills {
+			files := detailFilesFromDetail(m.previewDetail)
+			if len(files) == 1 {
+				return files[0].Name, files[0].Binary
+			}
+		}
 		return "description.txt", false
 	}
 	if m.screen == screenDetail {
@@ -948,6 +1171,8 @@ func (m model) activeKind() string {
 		return resourceKindSkills
 	case railInstructions:
 		return resourceKindInstructions
+	case railPrompts:
+		return resourceKindPrompts
 	case railAgents:
 		return resourceKindAgents
 	case railTargets:

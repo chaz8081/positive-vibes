@@ -14,6 +14,7 @@ type keyMap struct {
 	PreviewTop      key.Binding
 	PreviewBottom   key.Binding
 	ToggleFocus     key.Binding
+	ResetTargets    key.Binding
 	Search          key.Binding
 	Back            key.Binding
 	Quit            key.Binding
@@ -55,6 +56,9 @@ func defaultKeyMap() keyMap {
 		),
 		ToggleFocus: key.NewBinding(
 			key.WithKeys("tab"),
+		),
+		ResetTargets: key.NewBinding(
+			key.WithKeys("r"),
 		),
 		Search: key.NewBinding(
 			key.WithKeys("/"),

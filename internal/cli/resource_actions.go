@@ -16,6 +16,79 @@ type ResourceMutationReport struct {
 	SkippedMissingNames   []string
 }
 
+type RegistryPromotionSkip struct {
+	Name   string
+	Reason string
+}
+
+type RegistryPromotionReport struct {
+	PromotedNames []string
+	Skipped       []RegistryPromotionSkip
+}
+
+func PromoteLocalRegistriesToGlobalWithReport(projectDir, globalPath string) (RegistryPromotionReport, error) {
+	report := RegistryPromotionReport{}
+	if projectDir == "" || globalPath == "" {
+		return report, nil
+	}
+
+	local, _, err := manifest.LoadManifestFromProject(projectDir)
+	if err != nil || local == nil || len(local.Registries) == 0 {
+		return report, nil
+	}
+
+	global := &manifest.Manifest{}
+	if _, err := os.Stat(globalPath); err == nil {
+		loaded, loadErr := manifest.LoadManifest(globalPath)
+		if loadErr != nil {
+			return report, loadErr
+		}
+		global = loaded
+	}
+
+	globalByName := make(map[string]manifest.RegistryRef, len(global.Registries))
+	for _, r := range global.Registries {
+		globalByName[r.Name] = r
+	}
+
+	mutated := false
+	for _, r := range local.Registries {
+		if r.Name == "" {
+			report.Skipped = append(report.Skipped, RegistryPromotionSkip{Name: r.Name, Reason: "missing name"})
+			continue
+		}
+		if strings.TrimSpace(r.URL) == "" {
+			report.Skipped = append(report.Skipped, RegistryPromotionSkip{Name: r.Name, Reason: "missing url"})
+			continue
+		}
+		if strings.TrimSpace(r.Ref) == "" {
+			report.Skipped = append(report.Skipped, RegistryPromotionSkip{Name: r.Name, Reason: "missing ref"})
+			continue
+		}
+
+		if gr, exists := globalByName[r.Name]; exists {
+			if gr.URL != r.URL {
+				report.Skipped = append(report.Skipped, RegistryPromotionSkip{Name: r.Name, Reason: "name exists globally with different url"})
+			}
+			continue
+		}
+
+		normalized := normalizeRegistryRefPaths(r)
+		global.Registries = append(global.Registries, normalized)
+		globalByName[r.Name] = normalized
+		report.PromotedNames = append(report.PromotedNames, r.Name)
+		mutated = true
+	}
+
+	if mutated {
+		if err := manifest.SaveManifest(global, globalPath); err != nil {
+			return report, err
+		}
+	}
+
+	return report, nil
+}
+
 // InstallResourceItems installs resources by type without interactive prompts.
 func InstallResourceItems(projectDir, globalPath, kind string, names []string) error {
 	_, err := InstallResourceItemsWithReport(projectDir, globalPath, kind, names)
@@ -106,7 +179,7 @@ func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names [
 			return report, fmt.Errorf("%s", strings.Join(errs, "; "))
 		}
 		return report, manifest.SaveManifest(m, manifestPath)
-	case ResourceAgents, ResourceInstructions, ResourceTargets, ResourceRegistries:
+	case ResourceAgents, ResourceInstructions, ResourcePrompts, ResourceTargets, ResourceRegistries:
 		m, manifestPath, findErr := manifest.LoadManifestFromProject(projectDir)
 		if findErr != nil {
 			manifestPath = filepath.Join(projectDir, "vibes.yaml")
@@ -162,6 +235,28 @@ func InstallResourceItemsWithReport(projectDir, globalPath, kind string, names [
 					i.Path = fmt.Sprintf("./instructions/%s.md", name)
 				}
 				m.Instructions = append(m.Instructions, i)
+				existing[name] = true
+				report.MutatedNames = append(report.MutatedNames, name)
+			}
+		case ResourcePrompts:
+			existing := make(map[string]bool)
+			for _, p := range m.Prompts {
+				existing[p.Name] = true
+			}
+			for _, name := range uniqueNames {
+				if existing[name] {
+					appendUniqueName(&report.SkippedDuplicateNames, name)
+					continue
+				}
+				p := manifest.PromptRef{Name: name}
+				if ref, ok := availableByName[name]; ok {
+					p.Registry = ref.Registry
+					p.Path = ref.Path
+					ensureRegistryRefInManifest(m, merged, ref.Registry)
+				} else {
+					p.Path = fmt.Sprintf("./prompts/%s.prompt.md", name)
+				}
+				m.Prompts = append(m.Prompts, p)
 				existing[name] = true
 				report.MutatedNames = append(report.MutatedNames, name)
 			}
@@ -239,6 +334,29 @@ func RemoveResourceItemsGlobal(globalPath, kind string, names []string) error {
 	return err
 }
 
+func RemoveResourceItemsGlobalWithReport(projectDir, globalPath, kind string, names []string) (ResourceMutationReport, error) {
+	resType, err := ParseResourceType(kind)
+	if err != nil {
+		return ResourceMutationReport{}, err
+	}
+	if resType != ResourceRegistries {
+		globalDir := filepath.Dir(globalPath)
+		return RemoveResourceItemsWithReport(globalDir, kind, names)
+	}
+
+	local, _, localErr := manifest.LoadManifestFromProject(projectDir)
+	if localErr == nil && local != nil {
+		for _, name := range names {
+			if refs := countLocalRegistryRefs(local, name); refs > 0 {
+				return ResourceMutationReport{}, fmt.Errorf("cannot remove registry %q from global: referenced by local resources (%d)", name, refs)
+			}
+		}
+	}
+
+	globalDir := filepath.Dir(globalPath)
+	return RemoveResourceItemsWithReport(globalDir, kind, names)
+}
+
 func RemoveResourceItemsWithReport(projectDir, kind string, names []string) (ResourceMutationReport, error) {
 	uniqueNames, skippedDuplicateNames := uniqueRequestNames(names)
 	report := ResourceMutationReport{SkippedDuplicateNames: skippedDuplicateNames}
@@ -275,7 +393,7 @@ func RemoveResourceItemsWithReport(projectDir, kind string, names []string) (Res
 			return report, fmt.Errorf("%s", strings.Join(errs, "; "))
 		}
 		return report, nil
-	case ResourceAgents, ResourceInstructions, ResourceTargets, ResourceRegistries:
+	case ResourceAgents, ResourceInstructions, ResourcePrompts, ResourceTargets, ResourceRegistries:
 		m, manifestPath, findErr := manifest.LoadManifestFromProject(projectDir)
 		if findErr != nil {
 			return report, fmt.Errorf("no manifest found in %s", projectDir)
@@ -312,6 +430,22 @@ func RemoveResourceItemsWithReport(projectDir, kind string, names []string) (Res
 					continue
 				}
 				m.Instructions = append(m.Instructions[:idx], m.Instructions[idx+1:]...)
+				report.MutatedNames = append(report.MutatedNames, name)
+			}
+		case ResourcePrompts:
+			for _, name := range uniqueNames {
+				idx := -1
+				for i, p := range m.Prompts {
+					if p.Name == name {
+						idx = i
+						break
+					}
+				}
+				if idx < 0 {
+					appendUniqueName(&report.SkippedMissingNames, name)
+					continue
+				}
+				m.Prompts = append(m.Prompts[:idx], m.Prompts[idx+1:]...)
 				report.MutatedNames = append(report.MutatedNames, name)
 			}
 		case ResourceTargets:
@@ -410,10 +544,41 @@ func normalizeRegistryRefPaths(r manifest.RegistryRef) manifest.RegistryRef {
 		r.Paths["skills"] = root
 	}
 	if r.Paths["instructions"] == "" {
-		r.Paths["instructions"] = root
+		r.Paths["instructions"] = "instructions/"
 	}
 	if r.Paths["agents"] == "" {
-		r.Paths["agents"] = root
+		r.Paths["agents"] = "agents/"
+	}
+	if r.Paths["prompts"] == "" {
+		r.Paths["prompts"] = "prompts/"
 	}
 	return r
+}
+
+func countLocalRegistryRefs(local *manifest.Manifest, registryName string) int {
+	if local == nil || registryName == "" {
+		return 0
+	}
+	count := 0
+	for _, s := range local.Skills {
+		if s.Registry == registryName {
+			count++
+		}
+	}
+	for _, i := range local.Instructions {
+		if i.Registry == registryName {
+			count++
+		}
+	}
+	for _, a := range local.Agents {
+		if a.Registry == registryName {
+			count++
+		}
+	}
+	for _, p := range local.Prompts {
+		if p.Registry == registryName {
+			count++
+		}
+	}
+	return count
 }

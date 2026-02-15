@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/pkg/schema"
 )
@@ -37,6 +38,10 @@ func (m model) View() string {
 	if m.showHelp {
 		helpWidth := contentWidthForStyle(width, helpStyle)
 		modal = m.renderHelp(helpWidth)
+	}
+	if m.showRegistryFix {
+		fixWidth := contentWidthForStyle(width, helpStyle)
+		modal = m.renderRegistryFixModal(fixWidth)
 	}
 
 	content := body
@@ -203,12 +208,15 @@ func (m model) renderDetailScreen(totalWidth int) string {
 func (m model) renderHelp(width int) string {
 	text := []string{
 		"Help",
-		"- arrows/jk: move selection",
+		"- up/down or j/k: move/scroll vertically",
+		"- left/right or h/l: switch list/preview focus",
 		"- space: cycle scope (none/local/global/both)",
+		"- registries L!: guided fix dialog",
+		"- targets r: reset local override",
 		"- J/K: scroll preview",
 		"- ctrl+d/ctrl+u: half-page preview scroll",
 		"- g/G: top/bottom preview",
-		"- enter: drill in",
+		"- enter: multi-file skills detail (single-file stays inline)",
 		"- /: fuzzy search",
 		"- esc: back",
 		"- " + m.quitKeyText() + ": quit",
@@ -235,9 +243,14 @@ func (m model) renderList(width int, focused bool) string {
 	for i := start; i < end; i++ {
 		row := m.filteredRows[i]
 		status := " "
+		if m.activeKind() == resourceKindRegistries && row.State == "registry_attention" {
+			status = "L!"
+		}
 		switch row.InstallScope {
 		case "local":
-			status = "L"
+			if status == " " {
+				status = "L"
+			}
 		case "global":
 			status = "G"
 		case "both":
@@ -269,6 +282,31 @@ func (m model) renderDescriptionPane(width int, focused bool) string {
 			style = cardActiveStyle
 		}
 		return style.Width(width).Render(mutedStyle.Render("Select a resource to view description"))
+	}
+	if m.screen == screenBrowser && (m.activeKind() == resourceKindInstructions || m.activeKind() == resourceKindPrompts || m.activeKind() == resourceKindAgents) {
+		content := m.previewContentView()
+		if strings.TrimSpace(xansi.Strip(content)) == "" {
+			content = mutedStyle.Render("(no content)")
+		}
+		style := panelStyle
+		if focused {
+			style = cardActiveStyle
+		}
+		return style.Width(width).Render(content)
+	}
+	if m.screen == screenBrowser && m.activeKind() == resourceKindSkills {
+		files := detailFilesFromDetail(d)
+		if len(files) == 1 {
+			content := m.previewContentView()
+			if strings.TrimSpace(xansi.Strip(content)) == "" {
+				content = mutedStyle.Render("(no content)")
+			}
+			style := panelStyle
+			if focused {
+				style = cardActiveStyle
+			}
+			return style.Width(width).Render(content)
+		}
 	}
 
 	desc := detailDescription(d)
@@ -395,10 +433,10 @@ func (m model) footerText() string {
 	} else if m.screen == screenDetail {
 		text = backKey + ": back  " + quitKey + ": quit"
 		if m.activeKind() == resourceKindSkills {
-			text = "tab: focus list/preview  j/k: move/scroll  ctrl+d/u: half page  g/G: top/bottom  " + backKey + ": back"
+			text = "left/right or h/l: focus panes  up/down or j/k: move/scroll  tab: toggle focus  ctrl+d/u: half page  g/G: top/bottom  " + backKey + ": back"
 		}
 	} else {
-		text = "tab: focus list/preview  j/k: move/scroll  space: cycle scope  " + scopeLegendInline() + "  " + searchKey + ": search  " + backKey + ": home"
+		text = "left/right or h/l: focus panes  up/down or j/k: move/scroll  space: cycle scope  r(targets): reset  " + scopeLegendInline() + "  " + searchKey + ": search  " + backKey + ": home"
 	}
 	if m.statusMessage == "" {
 		return text
@@ -511,6 +549,24 @@ func colorizeScopePrefix(text, scope string) string {
 
 func scopeLegendInline() string {
 	return "[" + scopeLocalStyle.Render("L") + " local " + scopeGlobalStyle.Render("G") + " global " + scopeBothStyle.Render("B") + " both]"
+}
+
+func (m model) renderRegistryFixModal(width int) string {
+	lines := []string{
+		"Registry Fix",
+		"- name: " + m.registryFixName,
+		"- issue: " + m.registryFixReason,
+		"",
+	}
+	for i, opt := range m.registryFixOptions {
+		line := "  " + opt
+		if i == m.registryFixCursor {
+			line = highlightStyle.Render("> " + opt)
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "", mutedStyle.Render("enter: select  esc: cancel"))
+	return helpStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
 func colorizePreview(content string) string {

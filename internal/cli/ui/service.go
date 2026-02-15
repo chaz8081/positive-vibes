@@ -13,6 +13,7 @@ const (
 	resourceKindSkills       = "skills"
 	resourceKindAgents       = "agents"
 	resourceKindInstructions = "instructions"
+	resourceKindPrompts      = "prompts"
 	resourceKindTargets      = "targets"
 	resourceKindRegistries   = "registries"
 )
@@ -34,6 +35,17 @@ type ResourceRow struct {
 	Description  string
 	Installed    bool
 	InstallScope string
+	State        string
+}
+
+type RegistryPromotionSkip struct {
+	Name   string
+	Reason string
+}
+
+type RegistryPromotionResult struct {
+	PromotedNames []string
+	Skipped       []RegistryPromotionSkip
 }
 
 type ResourceServiceBridge struct {
@@ -45,6 +57,7 @@ type ResourceServiceBridge struct {
 	RemoveResources        func(projectDir, kind string, names []string) error
 	InstallResourcesGlobal func(projectDir, globalPath, kind string, names []string) error
 	RemoveResourcesGlobal  func(projectDir, globalPath, kind string, names []string) error
+	PromoteLocalRegistries func(projectDir, globalPath string) (RegistryPromotionResult, error)
 }
 
 var (
@@ -103,6 +116,9 @@ func validateResourceServiceBridge(bridge ResourceServiceBridge) error {
 	if bridge.RemoveResourcesGlobal == nil {
 		return fmt.Errorf("resource service bridge RemoveResourcesGlobal is required")
 	}
+	if bridge.PromoteLocalRegistries == nil {
+		return fmt.Errorf("resource service bridge PromoteLocalRegistries is required")
+	}
 	return nil
 }
 
@@ -118,14 +134,15 @@ type Service struct {
 }
 
 type serviceDeps struct {
-	listAvailable func(kind string) ([]ResourceRow, error)
-	listInstalled func(kind string) ([]ResourceRow, error)
-	showDetail    func(kind, name string) (ResourceDetail, error)
-	mergeRows     func(available, installed []ResourceRow) []ResourceRow
-	install       func(kind string, names []string) error
-	remove        func(kind string, names []string) error
-	installGlobal func(kind string, names []string) error
-	removeGlobal  func(kind string, names []string) error
+	listAvailable     func(kind string) ([]ResourceRow, error)
+	listInstalled     func(kind string) ([]ResourceRow, error)
+	showDetail        func(kind, name string) (ResourceDetail, error)
+	mergeRows         func(available, installed []ResourceRow) []ResourceRow
+	install           func(kind string, names []string) error
+	remove            func(kind string, names []string) error
+	installGlobal     func(kind string, names []string) error
+	removeGlobal      func(kind string, names []string) error
+	promoteRegistries func() (RegistryPromotionResult, error)
 }
 
 func NewService(projectDir string) (*Service, error) {
@@ -167,6 +184,9 @@ func NewServiceWithBridge(projectDir string, bridge ResourceServiceBridge) (*Ser
 		},
 		removeGlobal: func(kind string, names []string) error {
 			return bridge.RemoveResourcesGlobal(projectDir, globalPath, kind, names)
+		},
+		promoteRegistries: func() (RegistryPromotionResult, error) {
+			return bridge.PromoteLocalRegistries(projectDir, globalPath)
 		},
 	}), nil
 }
@@ -233,12 +253,16 @@ func (s *Service) RemoveResourcesGlobal(kind string, names []string) error {
 	return s.deps.removeGlobal(kind, dedup(names))
 }
 
+func (s *Service) PromoteLocalRegistries() (RegistryPromotionResult, error) {
+	return s.deps.promoteRegistries()
+}
+
 func validateKind(kind string) error {
 	switch kind {
-	case resourceKindSkills, resourceKindAgents, resourceKindInstructions, resourceKindTargets, resourceKindRegistries:
+	case resourceKindSkills, resourceKindAgents, resourceKindInstructions, resourceKindPrompts, resourceKindTargets, resourceKindRegistries:
 		return nil
 	default:
-		return fmt.Errorf("unknown resource type %q (valid: skills, agents, instructions, targets, registries)", kind)
+		return fmt.Errorf("unknown resource type %q (valid: skills, agents, instructions, prompts, targets, registries)", kind)
 	}
 }
 

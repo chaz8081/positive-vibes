@@ -653,6 +653,62 @@ agents:
 	}
 }
 
+func TestApplierApply_PromptsInstallAndCursorSkip(t *testing.T) {
+	tmp := t.TempDir()
+
+	promptSrc := filepath.Join(tmp, "prompts", "release.prompt.md")
+	if err := os.MkdirAll(filepath.Dir(promptSrc), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(promptSrc, []byte("---\ndescription: Release\n---\nRun release checklist"), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["vscode-copilot","opencode","cursor"]
+prompts:
+- name: release
+  path: ./prompts/release.prompt.md
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.Apply(mfile, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	if _, err := os.Stat(filepath.Join(tmp, ".github", "prompts", "release.prompt.md")); err != nil {
+		t.Fatalf("expected prompt installed for copilot: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, ".opencode", "commands", "release.md")); err != nil {
+		t.Fatalf("expected prompt installed for opencode: %v", err)
+	}
+
+	installed := 0
+	skipped := 0
+	for _, op := range res.Ops {
+		if op.Kind != KindPrompt {
+			continue
+		}
+		switch op.Status {
+		case OpInstalled:
+			installed++
+		case OpSkipped:
+			skipped++
+		}
+	}
+	if installed != 2 || skipped != 1 {
+		t.Fatalf("expected prompt ops installed=2 skipped=1, got installed=%d skipped=%d ops=%+v", installed, skipped, res.Ops)
+	}
+}
+
 // --- Registry-based agent tests ---
 
 func TestApplierApply_AgentFromRegistry(t *testing.T) {

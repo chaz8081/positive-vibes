@@ -234,6 +234,20 @@ func annotateManifestWithOptions(global, local, merged *manifest.Manifest, opts 
 		}
 	}
 
+	// Build lookup sets for prompts
+	globalPrompts := make(map[string]bool)
+	localPrompts := make(map[string]bool)
+	if global != nil {
+		for _, p := range global.Prompts {
+			globalPrompts[p.Name] = true
+		}
+	}
+	if local != nil {
+		for _, p := range local.Prompts {
+			localPrompts[p.Name] = true
+		}
+	}
+
 	// Registries
 	if len(merged.Registries) > 0 {
 		b.WriteString("registries:\n")
@@ -332,6 +346,29 @@ func annotateManifestWithOptions(global, local, merged *manifest.Manifest, opts 
 		}
 	}
 
+	// Prompts
+	if len(merged.Prompts) > 0 {
+		b.WriteString("prompts:\n")
+		for _, p := range merged.Prompts {
+			tag := sourceTag(globalPrompts[p.Name], localPrompts[p.Name])
+			b.WriteString(fmt.Sprintf("  - name: %s  %s\n", p.Name, tag))
+			if p.Registry != "" {
+				b.WriteString(fmt.Sprintf("    registry: %s\n", p.Registry))
+			}
+			if p.Path != "" {
+				pathRoot := globalRoot
+				if localPrompts[p.Name] {
+					pathRoot = localRoot
+				}
+				if p.Registry != "" {
+					pathRoot = ""
+				}
+				displayPath := pathForDisplay(p.Path, pathRoot, opts.RelativePaths)
+				b.WriteString(fmt.Sprintf("    path: %s\n", displayPath))
+			}
+		}
+	}
+
 	return b.String()
 }
 
@@ -397,9 +434,9 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 
 	// Check resource/target presence (only when local config is present)
 	if requireSkillsAndTargets {
-		resourceCount := len(m.Skills) + len(m.Instructions) + len(m.Agents)
+		resourceCount := len(m.Skills) + len(m.Instructions) + len(m.Agents) + len(m.Prompts)
 		if resourceCount == 0 {
-			result.add("resources", "no resources defined (skills, instructions, or agents)")
+			result.add("resources", "no resources defined (skills, instructions, agents, or prompts)")
 		}
 		if resourceCount > 0 && len(m.Targets) == 0 {
 			result.add("targets", "no targets defined")
@@ -467,6 +504,19 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 		}
 	}
 
+	// Check each prompt with a path
+	for _, p := range m.Prompts {
+		if p.Registry != "" {
+			if !registryNameExists(p.Registry, m.Registries) {
+				result.add(p.Name, "registry not found: "+p.Registry)
+			}
+		} else if p.Path != "" {
+			if _, err := os.Stat(p.Path); err != nil {
+				result.add(p.Name, "path not found: "+p.Path)
+			}
+		}
+	}
+
 	for _, p := range localGlobalRegistryDependencyProblems(global, local) {
 		result.add(p.field, p.message)
 	}
@@ -481,6 +531,9 @@ func validateConfigWithContext(m *manifest.Manifest, embeddedSkills []string, ha
 		}
 		for _, name := range d.Agents {
 			result.warn(name, "local agent switches source type (path vs registry)")
+		}
+		for _, name := range d.Prompts {
+			result.warn(name, "local prompt switches source type (path vs registry)")
 		}
 	}
 
@@ -531,6 +584,9 @@ func localGlobalRegistryDependencyProblems(global, local *manifest.Manifest) []c
 	for _, a := range local.Agents {
 		appendIfGlobalOnly(a.Name, a.Registry, "agent")
 	}
+	for _, p := range local.Prompts {
+		appendIfGlobalOnly(p.Name, p.Registry, "prompt")
+	}
 	return out
 }
 
@@ -579,6 +635,14 @@ func namesFromAgents(items []manifest.AgentRef) map[string]bool {
 	return m
 }
 
+func namesFromPrompts(items []manifest.PromptRef) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, it := range items {
+		m[it.Name] = true
+	}
+	return m
+}
+
 func setDiff(a, b map[string]bool) []string {
 	var out []string
 	for name := range a {
@@ -607,6 +671,8 @@ func formatConfigDiff(global, local, merged *manifest.Manifest) string {
 	localInst := namesFromInstructions(local.Instructions)
 	globalAgents := namesFromAgents(global.Agents)
 	localAgents := namesFromAgents(local.Agents)
+	globalPrompts := namesFromPrompts(global.Prompts)
+	localPrompts := namesFromPrompts(local.Prompts)
 
 	d := manifest.ComputeOverrideDiagnostics(global, local)
 	var b strings.Builder
@@ -621,6 +687,9 @@ func formatConfigDiff(global, local, merged *manifest.Manifest) string {
 	if items := setDiff(globalAgents, localAgents); len(items) > 0 {
 		b.WriteString("  agents: " + strings.Join(items, ", ") + "\n")
 	}
+	if items := setDiff(globalPrompts, localPrompts); len(items) > 0 {
+		b.WriteString("  prompts: " + strings.Join(items, ", ") + "\n")
+	}
 
 	b.WriteString("\nLocal-only:\n")
 	if items := setDiff(localSkills, globalSkills); len(items) > 0 {
@@ -631,6 +700,9 @@ func formatConfigDiff(global, local, merged *manifest.Manifest) string {
 	}
 	if items := setDiff(localAgents, globalAgents); len(items) > 0 {
 		b.WriteString("  agents: " + strings.Join(items, ", ") + "\n")
+	}
+	if items := setDiff(localPrompts, globalPrompts); len(items) > 0 {
+		b.WriteString("  prompts: " + strings.Join(items, ", ") + "\n")
 	}
 
 	b.WriteString("\nOverrides:\n")
@@ -643,6 +715,9 @@ func formatConfigDiff(global, local, merged *manifest.Manifest) string {
 	if len(d.Agents) > 0 {
 		b.WriteString("  agents: " + strings.Join(d.Agents, ", ") + "\n")
 	}
+	if len(d.Prompts) > 0 {
+		b.WriteString("  prompts: " + strings.Join(d.Prompts, ", ") + "\n")
+	}
 	if len(d.Registries) > 0 {
 		b.WriteString("  registries: " + strings.Join(d.Registries, ", ") + "\n")
 	}
@@ -652,6 +727,7 @@ func formatConfigDiff(global, local, merged *manifest.Manifest) string {
 	b.WriteString(fmt.Sprintf("  skills: %d\n", len(merged.Skills)))
 	b.WriteString(fmt.Sprintf("  instructions: %d\n", len(merged.Instructions)))
 	b.WriteString(fmt.Sprintf("  agents: %d\n", len(merged.Agents)))
+	b.WriteString(fmt.Sprintf("  prompts: %d\n", len(merged.Prompts)))
 	b.WriteString(fmt.Sprintf("  targets: %d\n", len(merged.Targets)))
 
 	return b.String()
@@ -674,17 +750,21 @@ func formatConfigDiffJSON(global, local, merged *manifest.Manifest) (string, err
 	localInst := namesFromInstructions(local.Instructions)
 	globalAgents := namesFromAgents(global.Agents)
 	localAgents := namesFromAgents(local.Agents)
+	globalPrompts := namesFromPrompts(global.Prompts)
+	localPrompts := namesFromPrompts(local.Prompts)
 
 	payload := map[string]any{
 		"global_only": map[string]any{
 			"skills":       setDiff(globalSkills, localSkills),
 			"instructions": setDiff(globalInst, localInst),
 			"agents":       setDiff(globalAgents, localAgents),
+			"prompts":      setDiff(globalPrompts, localPrompts),
 		},
 		"local_only": map[string]any{
 			"skills":       setDiff(localSkills, globalSkills),
 			"instructions": setDiff(localInst, globalInst),
 			"agents":       setDiff(localAgents, globalAgents),
+			"prompts":      setDiff(localPrompts, globalPrompts),
 		},
 		"overrides": map[string]any{
 			"all":   manifest.ComputeOverrideDiagnostics(global, local),
@@ -695,6 +775,7 @@ func formatConfigDiffJSON(global, local, merged *manifest.Manifest) (string, err
 			"skills":       len(merged.Skills),
 			"instructions": len(merged.Instructions),
 			"agents":       len(merged.Agents),
+			"prompts":      len(merged.Prompts),
 			"targets":      len(merged.Targets),
 		},
 	}
@@ -839,7 +920,7 @@ var configValidateCmd = &cobra.Command{
 	Long: `Loads the merged configuration and runs offline checks:
 - Config files exist and parse correctly
 - All targets are valid
-- All skills are resolvable (embedded or local path)
+- Resource references are resolvable (skills/instructions/agents/prompts)
 
 Exits with code 1 if any problems are found.`,
 	Run: func(cmd *cobra.Command, args []string) {

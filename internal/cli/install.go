@@ -17,7 +17,7 @@ var installCmd = &cobra.Command{
 
 If no names are given, an interactive picker is shown.
 
-Resource types: skills, agents, instructions
+Resource types: skills, agents, instructions, prompts
 
 Examples:
   positive-vibes install skills                     # interactive picker
@@ -43,6 +43,8 @@ Examples:
 			installAgentsRun(names)
 		case ResourceInstructions:
 			installInstructionsRun(names)
+		case ResourcePrompts:
+			installPromptsRun(names)
 		}
 	},
 }
@@ -120,6 +122,60 @@ func installSkillsRun(names []string) {
 	}
 
 	fmt.Println("\nRun 'positive-vibes apply' to install everywhere!")
+}
+
+func installPromptsRun(names []string) {
+	project := ProjectDir()
+	globalPath := defaultGlobalManifestPath()
+
+	_, manifestPath, findErr := manifest.LoadManifestFromProject(project)
+	if findErr != nil {
+		manifestPath = filepath.Join(project, "vibes.yaml")
+	}
+
+	if len(names) == 0 {
+		merged, _ := manifest.LoadMergedManifest(project, globalPath)
+		available := collectAvailablePrompts(merged)
+		var options []huh.Option[string]
+		for _, item := range available {
+			if !item.Installed {
+				options = append(options, huh.NewOption(item.Name, item.Name))
+			}
+		}
+		if len(options) > 0 {
+			var selected []string
+			form := huh.NewForm(
+				huh.NewGroup(
+					huh.NewMultiSelect[string]().
+						Title("Select prompts to install").
+						Description("Use space to toggle, enter to confirm").
+						Options(options...).
+						Value(&selected),
+				),
+			)
+			if err := form.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return
+			}
+			if len(selected) == 0 {
+				fmt.Println("No prompts selected.")
+				return
+			}
+			names = selected
+		}
+	}
+
+	report, err := installResourcesCommandAction(project, globalPath, string(ResourcePrompts), names)
+	for _, name := range report.MutatedNames {
+		fmt.Printf("Added prompt '%s' to %s\n", name, filepath.Base(manifestPath))
+	}
+	for _, name := range report.SkippedDuplicateNames {
+		fmt.Fprintf(os.Stderr, "warning: prompt '%s' already exists in manifest, skipping\n", name)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return
+	}
 }
 
 func installAgentsRun(names []string) {

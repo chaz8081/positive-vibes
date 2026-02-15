@@ -815,6 +815,27 @@ func TestGitRegistry_ListResourceFiles_DefaultRoot(t *testing.T) {
 	assert.Contains(t, agentFiles, "agents/debug.agent.md")
 }
 
+func TestGitRegistry_ListResourceFiles_PromptsKind(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"prompts/checklist.prompt.md": "---\ndescription: Checklist\n---\nRun checklist",
+		"prompts/refactor.md":         "---\ndescription: Refactor\n---\nRefactor this",
+		"instructions/style.md":       "Style guide",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "prompt-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "prompt-reg"),
+		SkillsPath:   ".",
+		PromptsPath:  "prompts",
+	}
+
+	files, err := reg.ListResourceFiles("prompts")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"checklist.prompt.md", "refactor.md"}, files)
+}
+
 func TestGitRegistry_FetchResourceFile_WithCustomPaths(t *testing.T) {
 	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
 		"repo-skills/skill-a/SKILL.md":            "---\nname: skill-a\n---\n# A\n",

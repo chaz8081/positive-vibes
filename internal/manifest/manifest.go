@@ -22,6 +22,7 @@ type Manifest struct {
 	Skills       []SkillRef       `yaml:"skills"`
 	Instructions []InstructionRef `yaml:"instructions,omitempty"`
 	Agents       []AgentRef       `yaml:"agents,omitempty"`
+	Prompts      []PromptRef      `yaml:"prompts,omitempty"`
 	Targets      []string         `yaml:"targets"`
 }
 
@@ -31,6 +32,7 @@ type OverrideDiagnostics struct {
 	Skills       []string
 	Instructions []string
 	Agents       []string
+	Prompts      []string
 }
 
 // RiskyOverrideDiagnostics describes overrides that change how an entry is sourced.
@@ -39,6 +41,7 @@ type RiskyOverrideDiagnostics struct {
 	Skills       []string
 	Instructions []string
 	Agents       []string
+	Prompts      []string
 }
 
 // ComputeOverrideDiagnostics returns resource names defined in both global and local manifests.
@@ -63,6 +66,10 @@ func ComputeOverrideDiagnostics(global, local *Manifest) OverrideDiagnostics {
 	for _, a := range global.Agents {
 		globalAgents[a.Name] = true
 	}
+	globalPrompts := make(map[string]bool)
+	for _, p := range global.Prompts {
+		globalPrompts[p.Name] = true
+	}
 
 	d := OverrideDiagnostics{}
 	for _, r := range local.Registries {
@@ -85,11 +92,17 @@ func ComputeOverrideDiagnostics(global, local *Manifest) OverrideDiagnostics {
 			d.Agents = append(d.Agents, a.Name)
 		}
 	}
+	for _, p := range local.Prompts {
+		if globalPrompts[p.Name] {
+			d.Prompts = append(d.Prompts, p.Name)
+		}
+	}
 
 	sort.Strings(d.Registries)
 	sort.Strings(d.Skills)
 	sort.Strings(d.Instructions)
 	sort.Strings(d.Agents)
+	sort.Strings(d.Prompts)
 	return d
 }
 
@@ -113,6 +126,10 @@ func ComputeRiskyOverrideDiagnostics(global, local *Manifest) RiskyOverrideDiagn
 	globalAgents := make(map[string]AgentRef)
 	for _, a := range global.Agents {
 		globalAgents[a.Name] = a
+	}
+	globalPrompts := make(map[string]PromptRef)
+	for _, p := range global.Prompts {
+		globalPrompts[p.Name] = p
 	}
 
 	r := RiskyOverrideDiagnostics{}
@@ -157,10 +174,20 @@ func ComputeRiskyOverrideDiagnostics(global, local *Manifest) RiskyOverrideDiagn
 			}
 		}
 	}
+	for _, p := range local.Prompts {
+		if gp, ok := globalPrompts[p.Name]; ok {
+			globalUsesPath := gp.Registry == ""
+			localUsesPath := p.Registry == ""
+			if globalUsesPath != localUsesPath {
+				r.Prompts = append(r.Prompts, p.Name)
+			}
+		}
+	}
 
 	sort.Strings(r.Skills)
 	sort.Strings(r.Instructions)
 	sort.Strings(r.Agents)
+	sort.Strings(r.Prompts)
 	return r
 }
 
@@ -188,6 +215,13 @@ type AgentRef struct {
 	Registry string `yaml:"registry,omitempty"`
 }
 
+// PromptRef is a reference to a prompt file in the manifest.
+type PromptRef struct {
+	Name     string `yaml:"name"`
+	Path     string `yaml:"path"`
+	Registry string `yaml:"registry,omitempty"`
+}
+
 // RegistryRef points to a remote git repository of skills.
 type RegistryRef struct {
 	Name  string            `yaml:"name"`
@@ -197,30 +231,39 @@ type RegistryRef struct {
 }
 
 // SkillsPath returns the configured path for skills in this registry,
-// defaulting to "." (repo root) if not set.
+// defaulting to "skills/" if not set.
 func (r RegistryRef) SkillsPath() string {
 	if p, ok := r.Paths["skills"]; ok && p != "" {
 		return p
 	}
-	return "."
+	return "skills/"
 }
 
 // InstructionsPath returns the configured base path for instructions in this
-// registry, defaulting to "." (repo root) if not set.
+// registry, defaulting to "instructions/" if not set.
 func (r RegistryRef) InstructionsPath() string {
 	if p, ok := r.Paths["instructions"]; ok && p != "" {
 		return p
 	}
-	return "."
+	return "instructions/"
 }
 
 // AgentsPath returns the configured base path for agents in this registry,
-// defaulting to "." (repo root) if not set.
+// defaulting to "agents/" if not set.
 func (r RegistryRef) AgentsPath() string {
 	if p, ok := r.Paths["agents"]; ok && p != "" {
 		return p
 	}
-	return "."
+	return "agents/"
+}
+
+// PromptsPath returns the configured base path for prompts in this registry,
+// defaulting to "prompts/" if not set.
+func (r RegistryRef) PromptsPath() string {
+	if p, ok := r.Paths["prompts"]; ok && p != "" {
+		return p
+	}
+	return "prompts/"
 }
 
 // LoadManifest reads and parses a vibes.yaml file from the given path.
@@ -256,9 +299,9 @@ func SaveManifest(m *Manifest, path string) error {
 // Validate checks the manifest for correctness.
 // Returns error if: no resources defined, invalid target name, or invalid instruction/agent refs.
 func (m *Manifest) Validate() error {
-	resourceCount := len(m.Skills) + len(m.Instructions) + len(m.Agents)
+	resourceCount := len(m.Skills) + len(m.Instructions) + len(m.Agents) + len(m.Prompts)
 	if resourceCount == 0 {
-		return fmt.Errorf("manifest must define at least one resource (skill, instruction, or agent)")
+		return fmt.Errorf("manifest must define at least one resource (skill, instruction, agent, or prompt)")
 	}
 	if len(m.Targets) == 0 {
 		return fmt.Errorf("manifest must define at least one target")
@@ -306,6 +349,14 @@ func (m *Manifest) Validate() error {
 		}
 		if agent.Path == "" {
 			return fmt.Errorf("agent %q: path is required", agent.Name)
+		}
+	}
+	for i, prompt := range m.Prompts {
+		if prompt.Name == "" {
+			return fmt.Errorf("prompt[%d]: name is required", i)
+		}
+		if prompt.Path == "" {
+			return fmt.Errorf("prompt %q: path is required", prompt.Name)
 		}
 	}
 	return nil
@@ -359,6 +410,7 @@ func SaveManifestWithComments(m *Manifest, path string, header string) error {
 //   - Skills: merged by Name; project overrides global for same name
 //   - Instructions: merged by Name; project overrides global for same name
 //   - Agents: merged by Name; project overrides global for same name
+//   - Prompts: merged by Name; project overrides global for same name
 //   - Targets: project targets override global (no merge)
 //
 // Returns error only if neither global nor project manifest exists.
@@ -477,6 +529,26 @@ func LoadMergedManifest(projectDir string, globalPath string) (*Manifest, error)
 		merged.Agents = nil
 	}
 
+	// Prompts: merge by Name, project wins
+	promptMap := make(map[string]PromptRef)
+	var promptOrder []string
+	for _, p := range global.Prompts {
+		promptMap[p.Name] = p
+		promptOrder = append(promptOrder, p.Name)
+	}
+	for _, p := range project.Prompts {
+		if _, exists := promptMap[p.Name]; !exists {
+			promptOrder = append(promptOrder, p.Name)
+		}
+		promptMap[p.Name] = p // project overrides
+	}
+	for _, name := range promptOrder {
+		merged.Prompts = append(merged.Prompts, promptMap[name])
+	}
+	if len(merged.Prompts) == 0 {
+		merged.Prompts = nil
+	}
+
 	return merged, nil
 }
 
@@ -499,6 +571,11 @@ func ResolveManifestPaths(m *Manifest, baseDir string) {
 	for i := range m.Agents {
 		if m.Agents[i].Registry == "" && m.Agents[i].Path != "" && !filepath.IsAbs(m.Agents[i].Path) {
 			m.Agents[i].Path = filepath.Join(baseDir, m.Agents[i].Path)
+		}
+	}
+	for i := range m.Prompts {
+		if m.Prompts[i].Registry == "" && m.Prompts[i].Path != "" && !filepath.IsAbs(m.Prompts[i].Path) {
+			m.Prompts[i].Path = filepath.Join(baseDir, m.Prompts[i].Path)
 		}
 	}
 }

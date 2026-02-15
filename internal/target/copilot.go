@@ -13,6 +13,7 @@ func (CopilotTarget) Name() string           { return "vscode-copilot" }
 func (CopilotTarget) SkillDir() string       { return filepath.Join(".github", "skills") }
 func (CopilotTarget) InstructionDir() string { return filepath.Join(".github", "instructions") }
 func (CopilotTarget) AgentDir() string       { return filepath.Join(".github", "agents") }
+func (CopilotTarget) PromptDir() string      { return filepath.Join(".github", "prompts") }
 
 func (t CopilotTarget) Install(skill *schema.Skill, sourceDir string, projectRoot string, opts InstallOpts) error {
 	return installGeneric(skill, sourceDir, projectRoot, t.SkillDir(), opts)
@@ -33,4 +34,8 @@ func (t CopilotTarget) InstallInstruction(name, content, sourcePath, projectRoot
 
 func (t CopilotTarget) InstallAgent(name, sourcePath, projectRoot string, opts InstallOpts) error {
 	return installAgentGeneric(name, sourcePath, projectRoot, t.AgentDir(), opts)
+}
+
+func (t CopilotTarget) InstallPrompt(name, sourcePath, projectRoot string, opts InstallOpts) error {
+	return installPromptGeneric(name, sourcePath, projectRoot, t.PromptDir(), ".prompt.md", opts)
 }

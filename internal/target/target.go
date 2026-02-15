@@ -1,6 +1,7 @@
 package target
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -15,6 +16,9 @@ type InstallOpts struct {
 	Link  bool // create symlinks instead of copies
 }
 
+// ErrPromptInstallUnsupported indicates the target does not support prompts.
+var ErrPromptInstallUnsupported = errors.New("prompt install unsupported for target")
+
 // Target knows how to install a skill for a specific AI tool.
 type Target interface {
 	// Name returns the target identifier (e.g., "vscode-copilot").
@@ -25,6 +29,8 @@ type Target interface {
 	InstructionDir() string
 	// AgentDir returns the base directory for agents relative to project root.
 	AgentDir() string
+	// PromptDir returns the base directory for prompts relative to project root.
+	PromptDir() string
 	// Install writes the skill to the tool's expected location.
 	Install(skill *schema.Skill, sourceDir string, projectRoot string, opts InstallOpts) error
 	// SkillExists checks if a skill is already installed for this target.
@@ -35,6 +41,8 @@ type Target interface {
 	// InstallAgent writes an agent file to the target's agent directory.
 	// sourcePath is the path to the agent file to copy.
 	InstallAgent(name string, sourcePath string, projectRoot string, opts InstallOpts) error
+	// InstallPrompt writes a prompt file to the target's prompt/command directory.
+	InstallPrompt(name string, sourcePath string, projectRoot string, opts InstallOpts) error
 }
 
 // ResolveTargets maps target name strings to Target implementations.
@@ -183,6 +191,29 @@ func installAgentGeneric(name, sourcePath, projectRoot, agentDir string, opts In
 	data, err := os.ReadFile(sourcePath)
 	if err != nil {
 		return fmt.Errorf("read agent source: %w", err)
+	}
+
+	return os.WriteFile(dest, data, 0o644)
+}
+
+// installPromptGeneric writes a prompt file to the provided directory with
+// target-specific suffix.
+func installPromptGeneric(name, sourcePath, projectRoot, promptDir, suffix string, opts InstallOpts) error {
+	dest := filepath.Join(projectRoot, promptDir, name+suffix)
+
+	if _, err := os.Stat(dest); err == nil {
+		if !opts.Force {
+			return fmt.Errorf("prompt '%s' already exists for %s (use --force to overwrite)", name, promptDir)
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("read prompt source: %w", err)
 	}
 
 	return os.WriteFile(dest, data, 0o644)
