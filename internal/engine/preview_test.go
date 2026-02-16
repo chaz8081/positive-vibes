@@ -178,3 +178,22 @@ func TestPreviewSingleFileInstall_EmptyInputReturnsError(t *testing.T) {
 		t.Fatalf("expected error for empty preview input")
 	}
 }
+
+func TestPreviewSingleFileInstall_FromSourcePath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tgt := target.OpenCodeTarget{}
+	source := filepath.Join(dir, "source.md")
+	if err := os.WriteFile(source, []byte("source content\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	op, err := previewSingleFileInstall("hello", "", source, dir, tgt.InstructionDir(), ".md", tgt, KindInstruction)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if op.Action != DryRunCreate {
+		t.Fatalf("expected create, got %v", op.Action)
+	}
+}
