@@ -443,26 +443,14 @@ func writeTempResourceFile(projectDir, pattern string, data []byte) (string, err
 	return tmp.Name(), nil
 }
 
-func (a *Applier) fetchSkillFromRegistry(regName, skillName string) (*schema.Skill, string, error) {
-	for _, r := range a.Registries {
-		if r.Name() != regName {
-			continue
-		}
-		return r.Fetch(skillName)
-	}
-	return nil, "", fmt.Errorf("registry %q not found", regName)
-}
-
 // fetchSkillFromRegistryWithCleanup is like fetchSkillFromRegistry but returns
 // a cleanup function when the underlying registry supports CleanableFetcher.
 func (a *Applier) fetchSkillFromRegistryWithCleanup(regName, skillName string) (*schema.Skill, string, func(), error) {
-	for _, r := range a.Registries {
-		if r.Name() != regName {
-			continue
-		}
-		return fetchWithCleanup(r, skillName)
+	r, err := findRegistryByName(a.Registries, regName)
+	if err != nil {
+		return nil, "", nil, err
 	}
-	return nil, "", nil, fmt.Errorf("registry %q not found", regName)
+	return fetchWithCleanup(r, skillName)
 }
 
 // fetchWithCleanup fetches a skill from a source, returning a cleanup function
@@ -478,15 +466,22 @@ func fetchWithCleanup(src registry.SkillSource, name string) (*schema.Skill, str
 // fetchResourceFileFromRegistry looks up a registry by name, asserts it
 // supports resource file access, and fetches the requested file.
 func (a *Applier) fetchResourceFileFromRegistry(regName, kind, relPath string) ([]byte, error) {
-	for _, r := range a.Registries {
-		if r.Name() != regName {
-			continue
-		}
-		fs, ok := r.(registry.ResourceSource)
-		if !ok {
-			return nil, fmt.Errorf("registry %q does not support file access", regName)
-		}
-		return fs.FetchResourceFile(kind, relPath)
+	r, err := findRegistryByName(a.Registries, regName)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("registry %q not found", regName)
+	fs, ok := r.(registry.ResourceSource)
+	if !ok {
+		return nil, fmt.Errorf("registry %q does not support file access", regName)
+	}
+	return fs.FetchResourceFile(kind, relPath)
+}
+
+func findRegistryByName(regs []registry.SkillSource, name string) (registry.SkillSource, error) {
+	for _, r := range regs {
+		if r.Name() == name {
+			return r, nil
+		}
+	}
+	return nil, fmt.Errorf("registry %q not found", name)
 }
