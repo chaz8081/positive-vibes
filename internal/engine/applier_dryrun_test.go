@@ -197,3 +197,112 @@ func TestApplyManifest_DryRun_PromptsSkipCursor(t *testing.T) {
 		t.Fatalf("dry-run created opencode commands directory: %s (should not exist)", opencodeCommandsDir)
 	}
 }
+
+func TestApplyManifest_DryRun_EmptyManifest(t *testing.T) {
+	tmp := t.TempDir()
+
+	// A manifest with no resources is a validation error (not a dry-run concern).
+	// Verify dry-run surfaces the validation error properly.
+	m := &manifest.Manifest{
+		Targets: []string{"opencode"},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	_, err := a.ApplyManifest(m, tmp, target.InstallOpts{DryRun: true})
+	if err == nil {
+		t.Fatal("expected validation error for empty manifest")
+	}
+}
+
+func TestApplyManifest_DryRun_MissingSourceFile(t *testing.T) {
+	tmp := t.TempDir()
+
+	m := &manifest.Manifest{
+		Targets: []string{"opencode"},
+		Instructions: []manifest.InstructionRef{{
+			Name: "missing-inst",
+			Path: "./nonexistent/file.md",
+		}},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.ApplyManifest(m, tmp, target.InstallOpts{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry-run should not return top-level error for missing source, got: %v", err)
+	}
+
+	// Should report an error in res.Errors, not panic
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected error for missing source file, got none; DryRunOps: %+v", res.DryRunOps)
+	}
+}
+
+func TestApplyManifest_DryRun_LinkMode(t *testing.T) {
+	tmp := t.TempDir()
+
+	m := &manifest.Manifest{
+		Targets: []string{"opencode"},
+		Skills:  []manifest.SkillRef{{Name: "conventional-commits"}},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+
+	// Dry-run with Link mode should still produce preview ops (not actually symlink)
+	res, err := a.ApplyManifest(m, tmp, target.InstallOpts{DryRun: true, Link: true})
+	if err != nil {
+		t.Fatalf("dry-run+link apply error: %v", err)
+	}
+
+	if len(res.DryRunOps) == 0 {
+		t.Fatalf("expected DryRunOps for link mode, got 0")
+	}
+
+	// Should all be create (new install)
+	for _, op := range res.DryRunOps {
+		if op.Action != DryRunCreate {
+			t.Fatalf("expected create for new install with link, got %s for %s", op.Action, op.RelPath)
+		}
+	}
+
+	// No files or symlinks should have been created
+	if _, err := os.Stat(filepath.Join(tmp, ".opencode")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run+link created directory (should not exist)")
+	}
+}
+
+func TestApplyManifest_DryRun_InstructionApplyTo(t *testing.T) {
+	tmp := t.TempDir()
+
+	m := &manifest.Manifest{
+		Targets: []string{"opencode", "vscode-copilot"},
+		Instructions: []manifest.InstructionRef{{
+			Name:    "opencode-only",
+			Content: "This is only for opencode.",
+			ApplyTo: "opencode",
+		}},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.ApplyManifest(m, tmp, target.InstallOpts{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry-run apply error: %v", err)
+	}
+
+	// Should only have ops for opencode, not vscode-copilot
+	for _, op := range res.DryRunOps {
+		if op.Target == "vscode-copilot" {
+			t.Fatalf("instruction with apply_to=opencode should not appear for vscode-copilot: %+v", op)
+		}
+	}
+
+	if len(res.DryRunOps) != 1 {
+		t.Fatalf("expected exactly 1 DryRunOp, got %d: %+v", len(res.DryRunOps), res.DryRunOps)
+	}
+	if res.DryRunOps[0].Target != "opencode" {
+		t.Fatalf("expected target opencode, got %s", res.DryRunOps[0].Target)
+	}
+}
