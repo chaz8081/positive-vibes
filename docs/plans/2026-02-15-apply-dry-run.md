@@ -2,6 +2,8 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+**Status:** Completed on 2026-02-15 (merged into main).
+
 **Goal:** Add `--dry-run` / `-n` flag to `apply` that previews what would change without writing files, with optional `--verbose` / `-v` for unified diffs.
 
 **Architecture:** Add a `DryRun bool` field to `InstallOpts` that threads through the applier and target install functions. When set, install functions compute what *would* happen (create vs update) and return structured results instead of writing. A new `internal/engine/dryrun.go` handles diff computation and colored terminal rendering. No third-party dependencies -- unified diff is computed in-house.
