@@ -1,6 +1,6 @@
 # Repository Improvements Remediation Implementation Plan
 
-> **Status: COMPLETED** -- All 9 tasks complete.
+> **Status: Phase 2 in progress** -- Refactor follow-on work tracked in `docs/plans/2026-02-15-phase2-tech-debt-refactors.md`.
 
 **Goal:** Resolve repo audit findings end-to-end, prioritizing security/correctness, then CI/testability, then cleanup and docs hygiene.
 
