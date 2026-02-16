@@ -74,7 +74,6 @@ func installSkillsRun(cmd *cobra.Command, names []string) error {
 	if len(names) == 0 {
 		merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 		if mergeErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
 			return mergeErr
 		}
 		available := collectAvailableSkills(merged)
@@ -105,7 +104,6 @@ func installSkillsRun(cmd *cobra.Command, names []string) error {
 
 		err := form.Run()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -125,7 +123,6 @@ func installSkillsRun(cmd *cobra.Command, names []string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: skill '%s' already exists in manifest, skipping\n", name)
 	}
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 
@@ -145,7 +142,6 @@ func installPromptsRun(cmd *cobra.Command, names []string) error {
 	if len(names) == 0 {
 		merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 		if mergeErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
 			return mergeErr
 		}
 		available := collectAvailablePrompts(merged)
@@ -167,7 +163,6 @@ func installPromptsRun(cmd *cobra.Command, names []string) error {
 				),
 			)
 			if err := form.Run(); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 				return err
 			}
 			if len(selected) == 0 {
@@ -186,7 +181,6 @@ func installPromptsRun(cmd *cobra.Command, names []string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: prompt '%s' already exists in manifest, skipping\n", name)
 	}
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 	return nil
@@ -210,7 +204,6 @@ func installAgentsRun(cmd *cobra.Command, names []string) error {
 
 	merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 	if mergeErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
 		return mergeErr
 	}
 	availableRefs := collectRegistryResourceItems(merged, ResourceAgents)
@@ -238,7 +231,6 @@ func installAgentsRun(cmd *cobra.Command, names []string) error {
 				),
 			)
 			if err := form.Run(); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 				return err
 			}
 			if len(selected) == 0 {
@@ -272,19 +264,16 @@ func installAgentsRun(cmd *cobra.Command, names []string) error {
 		)
 
 		if err := form.Run(); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
 		if name == "" {
 			err := fmt.Errorf("agent name is required")
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
 		if existing[name] {
 			err := fmt.Errorf("agent '%s' already exists in manifest", name)
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -302,12 +291,10 @@ func installAgentsRun(cmd *cobra.Command, names []string) error {
 				Value(&regName)
 			regForm := huh.NewForm(huh.NewGroup(regInput))
 			if err := regForm.Run(); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 				return err
 			}
 			if regName == "" {
 				err := fmt.Errorf("registry name is required")
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 				return err
 			}
 		}
@@ -318,13 +305,11 @@ func installAgentsRun(cmd *cobra.Command, names []string) error {
 
 		valueForm := huh.NewForm(huh.NewGroup(valueInput))
 		if err := valueForm.Run(); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
 		if value == "" {
 			err := fmt.Errorf("agent source value is required")
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -339,7 +324,6 @@ func installAgentsRun(cmd *cobra.Command, names []string) error {
 		m.Agents = append(m.Agents, agent)
 		if err := manifest.SaveManifest(m, manifestPath); err != nil {
 			wrapped := fmt.Errorf("error saving manifest: %w", err)
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", wrapped)
 			return wrapped
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Added agent '%s' to %s\n", name, filepath.Base(manifestPath))
@@ -349,7 +333,6 @@ func installAgentsRun(cmd *cobra.Command, names []string) error {
 
 	report, err := installResourcesCommandAction(project, globalPath, string(ResourceAgents), names)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 
@@ -379,7 +362,6 @@ func installInstructionsRun(cmd *cobra.Command, names []string) error {
 
 	merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 	if mergeErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
 		return mergeErr
 	}
 	availableRefs := collectRegistryResourceItems(merged, ResourceInstructions)
@@ -407,7 +389,6 @@ func installInstructionsRun(cmd *cobra.Command, names []string) error {
 				),
 			)
 			if err := form.Run(); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 				return err
 			}
 			if len(selected) == 0 {
@@ -441,19 +422,16 @@ func installInstructionsRun(cmd *cobra.Command, names []string) error {
 		)
 
 		if err := form.Run(); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
 		if name == "" {
 			err := fmt.Errorf("instruction name is required")
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
 		if existing[name] {
 			err := fmt.Errorf("instruction '%s' already exists in manifest", name)
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -464,7 +442,6 @@ func installInstructionsRun(cmd *cobra.Command, names []string) error {
 				Value(&value)
 			contentForm := huh.NewForm(huh.NewGroup(contentInput))
 			if err := contentForm.Run(); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 				return err
 			}
 		} else {
@@ -474,14 +451,12 @@ func installInstructionsRun(cmd *cobra.Command, names []string) error {
 				Value(&value)
 			pathForm := huh.NewForm(huh.NewGroup(pathInput))
 			if err := pathForm.Run(); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 				return err
 			}
 		}
 
 		if value == "" {
 			err := fmt.Errorf("instruction content or path is required")
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -495,7 +470,6 @@ func installInstructionsRun(cmd *cobra.Command, names []string) error {
 		m.Instructions = append(m.Instructions, inst)
 		if err := manifest.SaveManifest(m, manifestPath); err != nil {
 			wrapped := fmt.Errorf("error saving manifest: %w", err)
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", wrapped)
 			return wrapped
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Added instruction '%s' to %s\n", name, filepath.Base(manifestPath))
@@ -505,7 +479,6 @@ func installInstructionsRun(cmd *cobra.Command, names []string) error {
 
 	report, err := installResourcesCommandAction(project, globalPath, string(ResourceInstructions), names)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 

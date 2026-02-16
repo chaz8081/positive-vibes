@@ -64,7 +64,6 @@ func removeSkillsRun(cmd *cobra.Command, names []string) error {
 	_, manifestPath, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
 		err := fmt.Errorf("no manifest found in %s", project)
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 
@@ -97,7 +96,6 @@ func removeSkillsRun(cmd *cobra.Command, names []string) error {
 
 		err := form.Run()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -117,7 +115,6 @@ func removeSkillsRun(cmd *cobra.Command, names []string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: skill not found in manifest: %s\n", name)
 	}
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 	return nil
@@ -129,7 +126,6 @@ func removeAgentsRun(cmd *cobra.Command, names []string) error {
 	m, _, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
 		err := fmt.Errorf("no manifest found in %s", project)
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 
@@ -158,7 +154,6 @@ func removeAgentsRun(cmd *cobra.Command, names []string) error {
 
 		err := form.Run()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -172,7 +167,6 @@ func removeAgentsRun(cmd *cobra.Command, names []string) error {
 
 	report, err := removeResourcesCommandAction(project, string(ResourceAgents), names)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 	for _, name := range report.MutatedNames {
@@ -190,7 +184,6 @@ func removeInstructionsRun(cmd *cobra.Command, names []string) error {
 	m, _, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
 		err := fmt.Errorf("no manifest found in %s", project)
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 
@@ -219,7 +212,6 @@ func removeInstructionsRun(cmd *cobra.Command, names []string) error {
 
 		err := form.Run()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -233,7 +225,6 @@ func removeInstructionsRun(cmd *cobra.Command, names []string) error {
 
 	report, err := removeResourcesCommandAction(project, string(ResourceInstructions), names)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 	for _, name := range report.MutatedNames {
@@ -251,7 +242,6 @@ func removePromptsRun(cmd *cobra.Command, names []string) error {
 	m, _, findErr := manifest.LoadManifestFromProject(project)
 	if findErr != nil {
 		err := fmt.Errorf("no manifest found in %s", project)
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 
@@ -279,7 +269,6 @@ func removePromptsRun(cmd *cobra.Command, names []string) error {
 
 		err := form.Run()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 			return err
 		}
 
@@ -293,7 +282,6 @@ func removePromptsRun(cmd *cobra.Command, names []string) error {
 
 	report, err := removeResourcesCommandAction(project, string(ResourcePrompts), names)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 		return err
 	}
 	for _, name := range report.MutatedNames {
