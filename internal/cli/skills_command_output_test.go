@@ -3,6 +3,7 @@ package cli
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -110,6 +111,63 @@ func TestShowCommand_RuntimeErrorsSilenceUsage(t *testing.T) {
 	}
 	if !showCmd.SilenceUsage || !showCmd.SilenceErrors {
 		t.Fatalf("expected show command to silence usage/errors on runtime failure")
+	}
+}
+
+func TestListCmd_TargetsProducesOutput(t *testing.T) {
+	projectDir = t.TempDir()
+	t.Cleanup(func() { projectDir = "." })
+
+	manifestPath := filepath.Join(projectDir, "vibes.yaml")
+	if err := os.WriteFile(manifestPath, []byte("targets: [\"opencode\"]\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	stdout, stderr := captureStdoutStderr(t, func() {
+		err := listCmd.RunE(listCmd, []string{"targets"})
+		if err != nil {
+			t.Fatalf("list targets run error: %v", err)
+		}
+	})
+
+	if !strings.Contains(stdout, "Targets:") {
+		t.Fatalf("stdout = %q, want targets list output", stdout)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("stderr = %q, expected empty stderr", stderr)
+	}
+}
+
+func TestListCmd_RegistriesProducesOutput(t *testing.T) {
+	projectDir = t.TempDir()
+	t.Cleanup(func() { projectDir = "." })
+
+	manifestPath := filepath.Join(projectDir, "vibes.yaml")
+	content := `targets: ["opencode"]
+registries:
+  - name: demo
+    url: https://example.com/demo.git
+    ref: main
+`
+	if err := os.WriteFile(manifestPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	stdout, stderr := captureStdoutStderr(t, func() {
+		err := listCmd.RunE(listCmd, []string{"registries"})
+		if err != nil {
+			t.Fatalf("list registries run error: %v", err)
+		}
+	})
+
+	if !strings.Contains(stdout, "Registries:") {
+		t.Fatalf("stdout = %q, want registries list output", stdout)
+	}
+	if !strings.Contains(stdout, "demo") {
+		t.Fatalf("stdout = %q, want registry name", stdout)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("stderr = %q, expected empty stderr", stderr)
 	}
 }
 
