@@ -26,3 +26,6 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+
+# Local OpenCode workspace artifacts
+.opencode/

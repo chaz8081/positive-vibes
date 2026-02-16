@@ -1,0 +1,14 @@
+# Version for SLSA Go builder config.
+version: 1
+
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=0
+
+flags:
+  - -trimpath
+
+goos: linux
+goarch: amd64
+main: ./cmd/positive-vibes/main.go
+binary: positive-vibes-{{ .Os }}-{{ .Arch }}

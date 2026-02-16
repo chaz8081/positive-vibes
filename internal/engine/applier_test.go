@@ -218,6 +218,44 @@ skills:
 	}
 }
 
+func TestApplierApply_LocalPathSkillParseErrorDoesNotFallbackToRegistry(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Create a local skill directory with invalid SKILL.md
+	skillDir := filepath.Join(tmp, "skills", "conventional-commits")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("not-valid-frontmatter"), 0o644); err != nil {
+		t.Fatalf("write invalid SKILL.md: %v", err)
+	}
+
+	// Name matches embedded skill, but local parse error should not fallback.
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: conventional-commits
+  path: ./skills/conventional-commits
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.Apply(mfile, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected local parse error, got none")
+	}
+	if res.Installed != 0 {
+		t.Fatalf("expected no installs when local skill path is invalid, got %d", res.Installed)
+	}
+}
+
 func TestApplierApply_OpsTracking(t *testing.T) {
 	tmp := t.TempDir()
 

@@ -20,7 +20,10 @@ func (t OpenCodeTarget) Install(skill *schema.Skill, sourceDir string, projectRo
 }
 
 func (OpenCodeTarget) SkillExists(skillName string, projectRoot string) bool {
-	dest := skillPath(projectRoot, filepath.Join(".opencode", "skills"), skillName)
+	dest, err := skillPath(projectRoot, filepath.Join(".opencode", "skills"), skillName)
+	if err != nil {
+		return false
+	}
 	f := filepath.Join(dest, "SKILL.md")
 	if _, err := os.Stat(f); err == nil {
 		return true

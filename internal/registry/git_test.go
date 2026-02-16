@@ -862,6 +862,59 @@ func TestGitRegistry_FetchResourceFile_WithCustomPaths(t *testing.T) {
 	assert.Equal(t, "# Reviewer", string(agent))
 }
 
+func TestGitRegistry_FetchFile_RejectsTraversalRelPath(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"my-skill/SKILL.md": "---\nname: my-skill\n---\n# My Skill\n",
+		"secret.txt":        "top-secret",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "file-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "file-reg"),
+		SkillsPath:   ".",
+	}
+
+	_, err := reg.FetchFile("my-skill", "../secret.txt")
+	require.Error(t, err)
+}
+
+func TestGitRegistry_FetchResourceFile_RejectsTraversalRelPath(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"instructions/setup.instructions.md": "setup",
+		"outside.md":                         "outside",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "resource-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "resource-reg"),
+		SkillsPath:   ".",
+	}
+
+	_, err := reg.FetchResourceFile("instructions", "../outside.md")
+	require.Error(t, err)
+}
+
+func TestGitRegistry_FetchResourceFile_RejectsUnknownKind(t *testing.T) {
+	repoDir := setupTestGitRepoWithFiles(t, ".", map[string]string{
+		"README.md": "hello",
+	})
+
+	cacheDir := t.TempDir()
+	reg := &GitRegistry{
+		RegistryName: "resource-reg",
+		URL:          repoDir,
+		CachePath:    filepath.Join(cacheDir, "resource-reg"),
+		SkillsPath:   ".",
+	}
+
+	_, err := reg.FetchResourceFile("unknown-kind", "README.md")
+	require.Error(t, err)
+}
+
 func TestGitRegistry_Fetch_PinnedRef_FallsBackToCache(t *testing.T) {
 	repoDir := setupTestGitRepo(t, ".", map[string]string{
 		"cached-skill": "---\nname: cached-skill\n---\n# Cached\n",

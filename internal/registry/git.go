@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/chaz8081/positive-vibes/internal/fsutil"
 	"github.com/chaz8081/positive-vibes/pkg/schema"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -145,7 +146,7 @@ func (r *GitRegistry) skillsDir() string {
 	return filepath.Join(r.CachePath, sp)
 }
 
-func (r *GitRegistry) kindDir(kind string) string {
+func (r *GitRegistry) kindDir(kind string) (string, error) {
 	var p string
 	switch kind {
 	case "skills":
@@ -157,12 +158,12 @@ func (r *GitRegistry) kindDir(kind string) string {
 	case "prompts":
 		p = r.PromptsPath
 	default:
-		p = "."
+		return "", fmt.Errorf("unknown resource kind: %s", kind)
 	}
 	if p == "" || p == "." {
-		return r.CachePath
+		return r.CachePath, nil
 	}
-	return filepath.Join(r.CachePath, p)
+	return filepath.Join(r.CachePath, p), nil
 }
 
 // Fetch retrieves a skill by name.
@@ -221,7 +222,14 @@ func (r *GitRegistry) FetchFile(skillName, relPath string) ([]byte, error) {
 		return nil, err
 	}
 
-	path := filepath.Join(r.skillsDir(), skillName, relPath)
+	skillRoot, err := fsutil.ResolveWithinRoot(r.skillsDir(), skillName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid skill path %q: %w", skillName, err)
+	}
+	path, err := fsutil.ResolveWithinRoot(skillRoot, relPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid relative path %q: %w", relPath, err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("file not found: %s/%s (registry %s)", skillName, relPath, r.RegistryName)
@@ -237,7 +245,14 @@ func (r *GitRegistry) ListFiles(skillName, relDir string) ([]string, error) {
 		return nil, err
 	}
 
-	dir := filepath.Join(r.skillsDir(), skillName, relDir)
+	skillRoot, err := fsutil.ResolveWithinRoot(r.skillsDir(), skillName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid skill path %q: %w", skillName, err)
+	}
+	dir, err := fsutil.ResolveWithinRoot(skillRoot, relDir)
+	if err != nil {
+		return nil, fmt.Errorf("invalid relative directory %q: %w", relDir, err)
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -262,7 +277,14 @@ func (r *GitRegistry) FetchResourceFile(kind, relPath string) ([]byte, error) {
 	if err := r.ensureCache(); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(r.kindDir(kind), relPath)
+	base, err := r.kindDir(kind)
+	if err != nil {
+		return nil, err
+	}
+	path, err := fsutil.ResolveWithinRoot(base, relPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid relative path %q: %w", relPath, err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("file not found: %s (registry %s, kind %s)", relPath, r.RegistryName, kind)
@@ -276,7 +298,10 @@ func (r *GitRegistry) ListResourceFiles(kind string) ([]string, error) {
 	if err := r.ensureCache(); err != nil {
 		return nil, err
 	}
-	base := r.kindDir(kind)
+	base, err := r.kindDir(kind)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(base); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -285,7 +310,7 @@ func (r *GitRegistry) ListResourceFiles(kind string) ([]string, error) {
 	}
 
 	var names []string
-	err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

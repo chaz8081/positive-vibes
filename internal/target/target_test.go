@@ -351,3 +351,22 @@ func TestTargets_InstallPrompt_Destinations(t *testing.T) {
 	err := cursor.InstallPrompt("release", srcFile, proj, InstallOpts{})
 	require.Error(t, err)
 }
+
+func TestTarget_Install_RejectsTraversalSkillName(t *testing.T) {
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "src")
+	require.NoError(t, os.MkdirAll(src, 0o755))
+
+	s := &schema.Skill{Name: "../escape", Version: "1.0.0"}
+	proj := filepath.Join(tmp, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+
+	err := OpenCodeTarget{}.Install(s, src, proj, InstallOpts{})
+	require.Error(t, err)
+}
+
+func TestTarget_InstallInstruction_RejectsTraversalName(t *testing.T) {
+	proj := t.TempDir()
+	err := OpenCodeTarget{}.InstallInstruction("../escape", "bad", "", proj, InstallOpts{})
+	require.Error(t, err)
+}

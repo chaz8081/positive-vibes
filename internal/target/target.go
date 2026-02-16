@@ -7,6 +7,7 @@ import (
 
 	"os"
 
+	"github.com/chaz8081/positive-vibes/internal/fsutil"
 	"github.com/chaz8081/positive-vibes/pkg/schema"
 )
 
@@ -64,13 +65,16 @@ func ResolveTargets(names []string) ([]Target, error) {
 }
 
 // helper to compute skill path
-func skillPath(projectRoot, skillDir, skillName string) string {
-	return filepath.Join(projectRoot, skillDir, skillName)
+func skillPath(projectRoot, skillDir, skillName string) (string, error) {
+	return fsutil.ResolveWithinRoot(filepath.Join(projectRoot, skillDir), skillName)
 }
 
 // installGeneric contains shared installation logic for targets.
 func installGeneric(skill *schema.Skill, sourceDir, projectRoot, skillDir string, opts InstallOpts) error {
-	dest := skillPath(projectRoot, skillDir, skill.Name)
+	dest, err := skillPath(projectRoot, skillDir, skill.Name)
+	if err != nil {
+		return fmt.Errorf("invalid skill name %q: %w", skill.Name, err)
+	}
 
 	// check exists
 	if _, err := os.Stat(dest); err == nil {
@@ -145,7 +149,10 @@ func installGeneric(skill *schema.Skill, sourceDir, projectRoot, skillDir string
 // installInstructionGeneric writes an instruction file as <name>.md into the
 // target's instruction directory. Either content or sourcePath must be provided.
 func installInstructionGeneric(name, content, sourcePath, projectRoot, instDir string, opts InstallOpts) error {
-	dest := filepath.Join(projectRoot, instDir, name+".md")
+	dest, err := fsutil.ResolveWithinRoot(filepath.Join(projectRoot, instDir), name+".md")
+	if err != nil {
+		return fmt.Errorf("invalid instruction name %q: %w", name, err)
+	}
 
 	if _, err := os.Stat(dest); err == nil {
 		if !opts.Force {
@@ -176,7 +183,10 @@ func installInstructionGeneric(name, content, sourcePath, projectRoot, instDir s
 // installAgentGeneric writes an agent file as <name>.md into the target's agent
 // directory by copying the content from sourcePath.
 func installAgentGeneric(name, sourcePath, projectRoot, agentDir string, opts InstallOpts) error {
-	dest := filepath.Join(projectRoot, agentDir, name+".md")
+	dest, err := fsutil.ResolveWithinRoot(filepath.Join(projectRoot, agentDir), name+".md")
+	if err != nil {
+		return fmt.Errorf("invalid agent name %q: %w", name, err)
+	}
 
 	if _, err := os.Stat(dest); err == nil {
 		if !opts.Force {
@@ -199,7 +209,10 @@ func installAgentGeneric(name, sourcePath, projectRoot, agentDir string, opts In
 // installPromptGeneric writes a prompt file to the provided directory with
 // target-specific suffix.
 func installPromptGeneric(name, sourcePath, projectRoot, promptDir, suffix string, opts InstallOpts) error {
-	dest := filepath.Join(projectRoot, promptDir, name+suffix)
+	dest, err := fsutil.ResolveWithinRoot(filepath.Join(projectRoot, promptDir), name+suffix)
+	if err != nil {
+		return fmt.Errorf("invalid prompt name %q: %w", name, err)
+	}
 
 	if _, err := os.Stat(dest); err == nil {
 		if !opts.Force {

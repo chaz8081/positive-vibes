@@ -88,6 +88,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 	for _, s := range m.Skills {
 		var sk *schema.Skill
 		var srcDir string
+		var localPathErr error
 
 		if s.Registry != "" {
 			skillPath := s.Path
@@ -107,12 +108,28 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 			}
 			p := filepath.Join(resolvedPath, "SKILL.md")
 			data, err := os.ReadFile(p)
-			if err == nil {
+			if err != nil {
+				localPathErr = fmt.Errorf("skill %s: read local skill file: %w", s.Name, err)
+			} else {
 				sk, err = schema.ParseSkillFile(data)
-				if err == nil {
+				if err != nil {
+					localPathErr = fmt.Errorf("skill %s: parse local skill file: %w", s.Name, err)
+				} else {
 					srcDir = resolvedPath
 				}
 			}
+		}
+
+		if localPathErr != nil {
+			errMsg := localPathErr.Error()
+			res.Errors = append(res.Errors, errMsg)
+			res.Ops = append(res.Ops, ApplyOp{
+				SkillName: s.Name,
+				Kind:      KindSkill,
+				Status:    OpError,
+				Error:     errMsg,
+			})
+			continue
 		}
 
 		// if not local, search registries

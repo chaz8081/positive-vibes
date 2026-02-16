@@ -21,7 +21,10 @@ func (t CursorTarget) Install(skill *schema.Skill, sourceDir string, projectRoot
 }
 
 func (CursorTarget) SkillExists(skillName string, projectRoot string) bool {
-	dest := skillPath(projectRoot, filepath.Join(".cursor", "skills"), skillName)
+	dest, err := skillPath(projectRoot, filepath.Join(".cursor", "skills"), skillName)
+	if err != nil {
+		return false
+	}
 	f := filepath.Join(dest, "SKILL.md")
 	if _, err := os.Stat(f); err == nil {
 		return true

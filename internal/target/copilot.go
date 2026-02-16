@@ -20,7 +20,10 @@ func (t CopilotTarget) Install(skill *schema.Skill, sourceDir string, projectRoo
 }
 
 func (CopilotTarget) SkillExists(skillName string, projectRoot string) bool {
-	dest := skillPath(projectRoot, filepath.Join(".github", "skills"), skillName)
+	dest, err := skillPath(projectRoot, filepath.Join(".github", "skills"), skillName)
+	if err != nil {
+		return false
+	}
 	f := filepath.Join(dest, "SKILL.md")
 	if _, err := os.Stat(f); err == nil {
 		return true
