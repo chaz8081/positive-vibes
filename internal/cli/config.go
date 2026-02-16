@@ -826,8 +826,8 @@ Subcommands:
   paths      Show resolved config file locations
   diff       Show differences between global/local/effective config
   validate   Check config for problems (offline)`,
-	Run: func(cmd *cobra.Command, args []string) {
-		_ = cmd.Help()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
 	},
 }
 
@@ -888,12 +888,13 @@ Use --sources to annotate each value with [global], [local], or
 var configPathsCmd = &cobra.Command{
 	Use:   "paths",
 	Short: "Show resolved config file locations",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
 		home, _ := os.UserHomeDir()
 		cacheDir := filepath.Join(home, ".positive-vibes", "cache")
 		fmt.Print(formatPaths(globalPath, project, cacheDir))
+		return nil
 	},
 }
 

@@ -224,7 +224,7 @@ func localManifestExists(projectDir string) bool {
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Create a starter vibes.yaml",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
 
@@ -238,8 +238,7 @@ var initCmd = &cobra.Command{
 		// Decide what to create.
 		action, err := resolveInitAction(globalExists, localExists, promptInitTarget)
 		if err != nil {
-			fmt.Println(err)
-			return
+			return err
 		}
 
 		// Write the requested manifest(s).
@@ -251,36 +250,33 @@ var initCmd = &cobra.Command{
 			fmt.Println("Scanning your project...")
 			res, scanErr := engine.ScanProject(project)
 			if scanErr != nil {
-				fmt.Printf("error scanning project: %v\n", scanErr)
-				return
+				return fmt.Errorf("error scanning project: %w", scanErr)
 			}
 
 			m := buildManifestFromScan(res)
 			content := renderBootstrapManifest(m)
 			if err := writeInitManifestContent(localPath, content); err != nil {
-				fmt.Printf("error writing local manifest: %v\n", err)
-				return
+				return fmt.Errorf("error writing local manifest: %w", err)
 			}
 			fmt.Printf("Created %s (%s project, %d skills)\n", localPath, res.Language, len(res.RecommendedSkills))
 
 			if action == initTargetBoth {
 				if err := writeInitManifest(globalPath); err != nil {
-					fmt.Printf("error writing global manifest: %v\n", err)
-					return
+					return fmt.Errorf("error writing global manifest: %w", err)
 				}
 				fmt.Printf("Created %s\n", globalPath)
 			}
 
 		case initTargetGlobal:
 			if err := writeInitManifest(globalPath); err != nil {
-				fmt.Printf("error writing global manifest: %v\n", err)
-				return
+				return fmt.Errorf("error writing global manifest: %w", err)
 			}
 			fmt.Printf("Created %s\n", globalPath)
 		}
 
 		fmt.Println("\nRun 'positive-vibes config validate' to verify your setup.")
 		fmt.Println("Run 'positive-vibes apply' to sync your tools!")
+		return nil
 	},
 }
 

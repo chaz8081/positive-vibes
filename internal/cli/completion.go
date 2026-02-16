@@ -226,8 +226,8 @@ func init() {
 Use "install" to auto-detect your shell and write completions to the right
 system path. Use the shell-specific subcommands (bash, zsh, fish, powershell)
 to print the script to stdout for manual setup.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			_ = cmd.Help()
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
 		},
 	}
 

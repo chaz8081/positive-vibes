@@ -78,10 +78,9 @@ func formatOverrideWarnings(d manifest.RiskyOverrideDiagnostics) string {
 var applyCmd = &cobra.Command{
 	Use:   "apply",
 	Short: "Apply manifest to all targets",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if applyDryRun && applyForce {
-			fmt.Println("error: --dry-run and --force cannot be used together (dry-run always shows the full picture)")
-			return
+			return fmt.Errorf("--dry-run and --force cannot be used together (dry-run always shows the full picture)")
 		}
 		if applyVerbose && !applyDryRun {
 			fmt.Println("warning: --verbose only has effect with --dry-run")
@@ -91,8 +90,7 @@ var applyCmd = &cobra.Command{
 		globalPath := defaultGlobalManifestPath()
 		merged, err := resolveManifestForApply(project, globalPath, applyGlobal)
 		if err != nil {
-			fmt.Printf("%v\n", err)
-			return
+			return err
 		}
 
 		if !applyGlobal {
@@ -109,7 +107,7 @@ var applyCmd = &cobra.Command{
 		} else {
 			if msg, skip := globalApplyNoOpMessage(merged); skip {
 				fmt.Println(msg)
-				return
+				return nil
 			}
 		}
 
@@ -141,15 +139,14 @@ var applyCmd = &cobra.Command{
 		}
 		res, err := applier.ApplyManifest(merged, project, opts)
 		if err != nil {
-			fmt.Printf("error: %v\n", err)
-			return
+			return err
 		}
 
 		// Dry-run output: show preview and return early
 		if applyDryRun {
 			if len(res.DryRunOps) == 0 && len(res.Errors) == 0 {
 				fmt.Println("Nothing to apply.")
-				return
+				return nil
 			}
 			for _, op := range res.DryRunOps {
 				fmt.Println("  " + op.ColoredString())
@@ -162,7 +159,7 @@ var applyCmd = &cobra.Command{
 			}
 			fmt.Println()
 			fmt.Println(engine.FormatDryRunSummary(res.DryRunOps))
-			return
+			return nil
 		}
 
 		// Print per-operation lines
@@ -192,6 +189,7 @@ var applyCmd = &cobra.Command{
 		} else {
 			fmt.Println("Nothing to install. Check your manifest.")
 		}
+		return nil
 	},
 }
 

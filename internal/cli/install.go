@@ -27,25 +27,29 @@ Examples:
   positive-vibes install instructions standards      # add instruction by name`,
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: makeValidArgsFunction("available"),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cmd.SetOut(os.Stdout)
+		cmd.SetErr(os.Stderr)
+		cmd.SilenceUsage = true
+		cmd.SilenceErrors = true
 		resType, err := ParseResourceType(args[0])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			return err
 		}
 
 		names := args[1:]
 
 		switch resType {
 		case ResourceSkills:
-			installSkillsRun(names)
+			return installSkillsRun(cmd, names)
 		case ResourceAgents:
-			installAgentsRun(names)
+			return installAgentsRun(cmd, names)
 		case ResourceInstructions:
-			installInstructionsRun(names)
+			return installInstructionsRun(cmd, names)
 		case ResourcePrompts:
-			installPromptsRun(names)
+			return installPromptsRun(cmd, names)
 		}
+		return nil
 	},
 }
 
@@ -56,7 +60,7 @@ func InstallResourcesCommandAction(projectDir, globalPath, kind string, names []
 	return InstallResourceItemsWithReport(projectDir, globalPath, kind, names)
 }
 
-func installSkillsRun(names []string) {
+func installSkillsRun(cmd *cobra.Command, names []string) error {
 	project := ProjectDir()
 	globalPath := defaultGlobalManifestPath()
 
@@ -70,8 +74,8 @@ func installSkillsRun(names []string) {
 	if len(names) == 0 {
 		merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 		if mergeErr != nil {
-			fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
-			return
+			fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
+			return mergeErr
 		}
 		available := collectAvailableSkills(merged)
 
@@ -85,7 +89,7 @@ func installSkillsRun(names []string) {
 
 		if len(options) == 0 {
 			fmt.Println("All available skills are already installed.")
-			return
+			return nil
 		}
 
 		var selected []string
@@ -101,13 +105,13 @@ func installSkillsRun(names []string) {
 
 		err := form.Run()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		if len(selected) == 0 {
 			fmt.Println("No skills selected.")
-			return
+			return nil
 		}
 
 		names = selected
@@ -115,20 +119,21 @@ func installSkillsRun(names []string) {
 
 	report, err := installResourcesCommandAction(project, globalPath, string(ResourceSkills), names)
 	for _, name := range report.MutatedNames {
-		fmt.Printf("Added '%s' to %s\n", name, filepath.Base(manifestPath))
+		fmt.Fprintf(cmd.OutOrStdout(), "Added '%s' to %s\n", name, filepath.Base(manifestPath))
 	}
 	for _, name := range report.SkippedDuplicateNames {
-		fmt.Fprintf(os.Stderr, "warning: skill '%s' already exists in manifest, skipping\n", name)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: skill '%s' already exists in manifest, skipping\n", name)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+		return err
 	}
 
-	fmt.Println("\nRun 'positive-vibes apply' to install everywhere!")
+	fmt.Fprintln(cmd.OutOrStdout(), "\nRun 'positive-vibes apply' to install everywhere!")
+	return nil
 }
 
-func installPromptsRun(names []string) {
+func installPromptsRun(cmd *cobra.Command, names []string) error {
 	project := ProjectDir()
 	globalPath := defaultGlobalManifestPath()
 
@@ -140,8 +145,8 @@ func installPromptsRun(names []string) {
 	if len(names) == 0 {
 		merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 		if mergeErr != nil {
-			fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
-			return
+			fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
+			return mergeErr
 		}
 		available := collectAvailablePrompts(merged)
 		var options []huh.Option[string]
@@ -162,12 +167,12 @@ func installPromptsRun(names []string) {
 				),
 			)
 			if err := form.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				return
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return err
 			}
 			if len(selected) == 0 {
-				fmt.Println("No prompts selected.")
-				return
+				fmt.Fprintln(cmd.OutOrStdout(), "No prompts selected.")
+				return nil
 			}
 			names = selected
 		}
@@ -175,18 +180,19 @@ func installPromptsRun(names []string) {
 
 	report, err := installResourcesCommandAction(project, globalPath, string(ResourcePrompts), names)
 	for _, name := range report.MutatedNames {
-		fmt.Printf("Added prompt '%s' to %s\n", name, filepath.Base(manifestPath))
+		fmt.Fprintf(cmd.OutOrStdout(), "Added prompt '%s' to %s\n", name, filepath.Base(manifestPath))
 	}
 	for _, name := range report.SkippedDuplicateNames {
-		fmt.Fprintf(os.Stderr, "warning: prompt '%s' already exists in manifest, skipping\n", name)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: prompt '%s' already exists in manifest, skipping\n", name)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+		return err
 	}
+	return nil
 }
 
-func installAgentsRun(names []string) {
+func installAgentsRun(cmd *cobra.Command, names []string) error {
 	project := ProjectDir()
 	globalPath := defaultGlobalManifestPath()
 
@@ -204,8 +210,8 @@ func installAgentsRun(names []string) {
 
 	merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 	if mergeErr != nil {
-		fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
-		return
+		fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
+		return mergeErr
 	}
 	availableRefs := collectRegistryResourceItems(merged, ResourceAgents)
 	availableByName := make(map[string]registryResourceItem, len(availableRefs))
@@ -232,12 +238,12 @@ func installAgentsRun(names []string) {
 				),
 			)
 			if err := form.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				return
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return err
 			}
 			if len(selected) == 0 {
-				fmt.Println("No agents selected.")
-				return
+				fmt.Fprintln(cmd.OutOrStdout(), "No agents selected.")
+				return nil
 			}
 			names = selected
 		}
@@ -266,18 +272,20 @@ func installAgentsRun(names []string) {
 		)
 
 		if err := form.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		if name == "" {
-			fmt.Fprintln(os.Stderr, "error: agent name is required")
-			return
+			err := fmt.Errorf("agent name is required")
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		if existing[name] {
-			fmt.Fprintf(os.Stderr, "error: agent '%s' already exists in manifest\n", name)
-			return
+			err := fmt.Errorf("agent '%s' already exists in manifest", name)
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		var pathPrompt string
@@ -294,12 +302,13 @@ func installAgentsRun(names []string) {
 				Value(&regName)
 			regForm := huh.NewForm(huh.NewGroup(regInput))
 			if err := regForm.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				return
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return err
 			}
 			if regName == "" {
-				fmt.Fprintln(os.Stderr, "error: registry name is required")
-				return
+				err := fmt.Errorf("registry name is required")
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return err
 			}
 		}
 
@@ -309,13 +318,14 @@ func installAgentsRun(names []string) {
 
 		valueForm := huh.NewForm(huh.NewGroup(valueInput))
 		if err := valueForm.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		if value == "" {
-			fmt.Fprintln(os.Stderr, "error: agent source value is required")
-			return
+			err := fmt.Errorf("agent source value is required")
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		agent := manifest.AgentRef{Name: name}
@@ -328,28 +338,30 @@ func installAgentsRun(names []string) {
 
 		m.Agents = append(m.Agents, agent)
 		if err := manifest.SaveManifest(m, manifestPath); err != nil {
-			fmt.Fprintf(os.Stderr, "error saving manifest: %v\n", err)
-			return
+			wrapped := fmt.Errorf("error saving manifest: %w", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", wrapped)
+			return wrapped
 		}
-		fmt.Printf("Added agent '%s' to %s\n", name, filepath.Base(manifestPath))
-		fmt.Println("\nRun 'positive-vibes apply' to install everywhere!")
-		return
+		fmt.Fprintf(cmd.OutOrStdout(), "Added agent '%s' to %s\n", name, filepath.Base(manifestPath))
+		fmt.Fprintln(cmd.OutOrStdout(), "\nRun 'positive-vibes apply' to install everywhere!")
+		return nil
 	}
 
 	report, err := installResourcesCommandAction(project, globalPath, string(ResourceAgents), names)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+		return err
 	}
 
 	for _, name := range report.SkippedDuplicateNames {
-		fmt.Fprintf(os.Stderr, "warning: agent '%s' already exists in manifest, skipping\n", name)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: agent '%s' already exists in manifest, skipping\n", name)
 	}
-	fmt.Printf("Saved %d agent(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
-	fmt.Println("Run 'positive-vibes apply' to install everywhere!")
+	fmt.Fprintf(cmd.OutOrStdout(), "Saved %d agent(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
+	fmt.Fprintln(cmd.OutOrStdout(), "Run 'positive-vibes apply' to install everywhere!")
+	return nil
 }
 
-func installInstructionsRun(names []string) {
+func installInstructionsRun(cmd *cobra.Command, names []string) error {
 	project := ProjectDir()
 	globalPath := defaultGlobalManifestPath()
 
@@ -367,8 +379,8 @@ func installInstructionsRun(names []string) {
 
 	merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
 	if mergeErr != nil {
-		fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
-		return
+		fmt.Fprintf(cmd.ErrOrStderr(), "error loading config: %v\n", mergeErr)
+		return mergeErr
 	}
 	availableRefs := collectRegistryResourceItems(merged, ResourceInstructions)
 	availableByName := make(map[string]registryResourceItem, len(availableRefs))
@@ -395,12 +407,12 @@ func installInstructionsRun(names []string) {
 				),
 			)
 			if err := form.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				return
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return err
 			}
 			if len(selected) == 0 {
-				fmt.Println("No instructions selected.")
-				return
+				fmt.Fprintln(cmd.OutOrStdout(), "No instructions selected.")
+				return nil
 			}
 			names = selected
 		}
@@ -429,18 +441,20 @@ func installInstructionsRun(names []string) {
 		)
 
 		if err := form.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		if name == "" {
-			fmt.Fprintln(os.Stderr, "error: instruction name is required")
-			return
+			err := fmt.Errorf("instruction name is required")
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		if existing[name] {
-			fmt.Fprintf(os.Stderr, "error: instruction '%s' already exists in manifest\n", name)
-			return
+			err := fmt.Errorf("instruction '%s' already exists in manifest", name)
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		if source == "content" {
@@ -450,8 +464,8 @@ func installInstructionsRun(names []string) {
 				Value(&value)
 			contentForm := huh.NewForm(huh.NewGroup(contentInput))
 			if err := contentForm.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				return
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return err
 			}
 		} else {
 			pathInput := huh.NewInput().
@@ -460,14 +474,15 @@ func installInstructionsRun(names []string) {
 				Value(&value)
 			pathForm := huh.NewForm(huh.NewGroup(pathInput))
 			if err := pathForm.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				return
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return err
 			}
 		}
 
 		if value == "" {
-			fmt.Fprintln(os.Stderr, "error: instruction content or path is required")
-			return
+			err := fmt.Errorf("instruction content or path is required")
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+			return err
 		}
 
 		inst := manifest.InstructionRef{Name: name}
@@ -479,25 +494,27 @@ func installInstructionsRun(names []string) {
 
 		m.Instructions = append(m.Instructions, inst)
 		if err := manifest.SaveManifest(m, manifestPath); err != nil {
-			fmt.Fprintf(os.Stderr, "error saving manifest: %v\n", err)
-			return
+			wrapped := fmt.Errorf("error saving manifest: %w", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", wrapped)
+			return wrapped
 		}
-		fmt.Printf("Added instruction '%s' to %s\n", name, filepath.Base(manifestPath))
-		fmt.Println("\nRun 'positive-vibes apply' to install everywhere!")
-		return
+		fmt.Fprintf(cmd.OutOrStdout(), "Added instruction '%s' to %s\n", name, filepath.Base(manifestPath))
+		fmt.Fprintln(cmd.OutOrStdout(), "\nRun 'positive-vibes apply' to install everywhere!")
+		return nil
 	}
 
 	report, err := installResourcesCommandAction(project, globalPath, string(ResourceInstructions), names)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+		return err
 	}
 
 	for _, name := range report.SkippedDuplicateNames {
-		fmt.Fprintf(os.Stderr, "warning: instruction '%s' already exists in manifest, skipping\n", name)
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: instruction '%s' already exists in manifest, skipping\n", name)
 	}
-	fmt.Printf("Saved %d instruction(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
-	fmt.Println("Run 'positive-vibes apply' to install everywhere!")
+	fmt.Fprintf(cmd.OutOrStdout(), "Saved %d instruction(s) to %s\n", len(report.MutatedNames), filepath.Base(manifestPath))
+	fmt.Fprintln(cmd.OutOrStdout(), "Run 'positive-vibes apply' to install everywhere!")
+	return nil
 }
 
 func init() {

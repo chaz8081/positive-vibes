@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/pkg/schema"
@@ -22,24 +21,24 @@ Examples:
   positive-vibes show instructions coding-standards`,
 	Args:              cobra.ExactArgs(2),
 	ValidArgsFunction: makeValidArgsFunction("all"),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		resType, err := ParseResourceType(args[0])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			return err
 		}
 		name := args[1]
 
 		switch resType {
 		case ResourceSkills:
-			showSkillRun(name)
+			return showSkillRun(name)
 		case ResourceAgents:
-			showAgentRun(name)
+			return showAgentRun(name)
 		case ResourceInstructions:
-			showInstructionRun(name)
+			return showInstructionRun(name)
 		case ResourcePrompts:
-			showPromptRun(name)
+			return showPromptRun(name)
 		}
+		return nil
 	},
 }
 
@@ -48,57 +47,56 @@ func ShowResourceCommandAction(projectDir, globalPath, kind, name string) (Resou
 	return ShowResourceDetail(projectDir, globalPath, kind, name)
 }
 
-func showSkillRun(name string) {
+func showSkillRun(name string) error {
 	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourceSkills), name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		return err
 	}
 	skill, ok := detail.Payload.(*schema.Skill)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "error: unexpected skill payload for %s\n", name)
-		return
+		return fmt.Errorf("unexpected skill payload for %s", name)
 	}
 	fmt.Print(formatSkillShow(skill, detail.Registry, detail.RegistryURL, detail.Installed))
+	return nil
 }
 
-func showAgentRun(name string) {
+func showAgentRun(name string) error {
 	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourceAgents), name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		return err
 	}
 	agent, ok := detail.Payload.(manifest.AgentRef)
 	if !ok {
 		agent = manifest.AgentRef{Name: detail.Name, Registry: detail.Registry, Path: detail.Path}
 	}
 	fmt.Print(formatAgentShow(agent, detail.Installed))
+	return nil
 }
 
-func showInstructionRun(name string) {
+func showInstructionRun(name string) error {
 	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourceInstructions), name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		return err
 	}
 	inst, ok := detail.Payload.(manifest.InstructionRef)
 	if !ok {
 		inst = manifest.InstructionRef{Name: detail.Name, Registry: detail.Registry, Path: detail.Path}
 	}
 	fmt.Print(formatInstructionShow(inst, detail.Installed))
+	return nil
 }
 
-func showPromptRun(name string) {
+func showPromptRun(name string) error {
 	detail, err := ShowResourceCommandAction(ProjectDir(), defaultGlobalManifestPath(), string(ResourcePrompts), name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return
+		return err
 	}
 	prompt, ok := detail.Payload.(manifest.PromptRef)
 	if !ok {
 		prompt = manifest.PromptRef{Name: detail.Name, Registry: detail.Registry, Path: detail.Path}
 	}
 	fmt.Print(formatPromptShow(prompt, detail.Installed))
+	return nil
 }
 
 func init() {

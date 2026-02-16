@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
+	"github.com/spf13/cobra"
 )
 
 func TestInstallSkillsRun_PrintsMutationReportOnPartialFailure(t *testing.T) {
@@ -24,7 +25,12 @@ func TestInstallSkillsRun_PrintsMutationReportOnPartialFailure(t *testing.T) {
 	}
 
 	stdout, stderr := captureStdoutStderr(t, func() {
-		installSkillsRun([]string{"alpha", "beta", "broken"})
+		cmd := &cobra.Command{}
+		cmd.SetOut(os.Stdout)
+		cmd.SetErr(os.Stderr)
+		cmd.SilenceUsage = true
+		cmd.SilenceErrors = true
+		_ = installSkillsRun(cmd, []string{"alpha", "beta", "broken"})
 	})
 
 	if !strings.Contains(stdout, "Added 'alpha' to vibes.yaml") {
@@ -54,7 +60,12 @@ func TestRemoveSkillsRun_PrintsMutationReportOnPartialFailure(t *testing.T) {
 	}
 
 	stdout, stderr := captureStdoutStderr(t, func() {
-		removeSkillsRun([]string{"alpha", "ghost", "broken"})
+		cmd := &cobra.Command{}
+		cmd.SetOut(os.Stdout)
+		cmd.SetErr(os.Stderr)
+		cmd.SilenceUsage = true
+		cmd.SilenceErrors = true
+		_ = removeSkillsRun(cmd, []string{"alpha", "ghost", "broken"})
 	})
 
 	if !strings.Contains(stdout, "Removed 'alpha' from vibes.yaml") {

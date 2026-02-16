@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/spf13/cobra"
@@ -30,19 +29,17 @@ Examples:
   positive-vibes list instructions`,
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: makeValidArgsFunction(""),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		resType, err := ParseResourceType(args[0])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			return err
 		}
 
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
 		merged, err := manifest.LoadMergedManifest(project, globalPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			return
+			return err
 		}
 
 		switch resType {
@@ -55,6 +52,7 @@ Examples:
 		case ResourcePrompts:
 			listPromptsRun(merged)
 		}
+		return nil
 	},
 }
 
