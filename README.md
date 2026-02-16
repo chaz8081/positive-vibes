@@ -3,7 +3,6 @@
 [![Go](https://github.com/chaz8081/positive-vibes/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/chaz8081/positive-vibes/actions/workflows/go.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 
-
 > Harmonize your AI tooling. One manifest to rule them all.
 
 positive-vibes is an environment-agnostic configuration manager for AI tooling. It aligns your AI tools -- VS Code Copilot, OpenCode, Cursor, and more -- from a single source of truth.
@@ -14,7 +13,7 @@ positive-vibes gives you one `vibes.yaml` to define your resources, then syncs t
 
 ## Prerequisites
 
-- **Go 1.24+** -- required to build and install
+- **Go 1.25+** -- required to build and install
 - **git** -- required for registry cloning and cache management
 
 ## Quick Start
@@ -144,10 +143,10 @@ When adding registries through the current TUI flow, missing registry paths are 
 
 positive-vibes supports a global + project layered config:
 
-| Level       | Location                             | Purpose                                                        |
-| ----------- | ------------------------------------ | -------------------------------------------------------------- |
+| Level       | Location                              | Purpose                                                     |
+| ----------- | ------------------------------------- | ----------------------------------------------------------- |
 | **Global**  | `~/.config/positive-vibes/vibes.yaml` | User-level defaults (personal registries, shared resources) |
-| **Project** | `./vibes.yaml`                        | Project-specific resources and targets                         |
+| **Project** | `./vibes.yaml`                        | Project-specific resources and targets                      |
 
 ### Merge behavior
 
@@ -170,12 +169,12 @@ Every registry entry requires a `ref` field that controls which version of the r
 
 ### Ref types
 
-| Ref value | Behavior |
-| --------- | -------- |
-| `latest`  | Track the registry's default branch. `positive-vibes apply --refresh` pulls new changes. |
-| Branch name (e.g. `main`, `develop`) | Pin to a specific branch. Refresh is a no-op. |
-| Tag name (e.g. `v1.2.0`) | Pin to a tagged release. Refresh is a no-op. |
-| Commit SHA (7-40 hex chars) | Pin to an exact commit. Refresh is a no-op. |
+| Ref value                            | Behavior                                                                                 |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `latest`                             | Track the registry's default branch. `positive-vibes apply --refresh` pulls new changes. |
+| Branch name (e.g. `main`, `develop`) | Pin to a specific branch. Refresh is a no-op.                                            |
+| Tag name (e.g. `v1.2.0`)             | Pin to a tagged release. Refresh is a no-op.                                             |
+| Commit SHA (7-40 hex chars)          | Pin to an exact commit. Refresh is a no-op.                                              |
 
 ### Examples
 
@@ -228,19 +227,19 @@ This keeps automation predictable while giving humans a fast default experience.
 
 ### TUI keybindings
 
-| Key | Action |
-| --- | ------ |
-| `left` / `h` | Focus list pane |
-| `right` / `l` | Focus preview pane |
-| `up` / `down` | Move cursor up/down or scroll preview (by focus) |
-| `j` / `k` | Vim-style vertical movement/scroll |
-| `tab` | Toggle list/preview focus |
-| `enter` | Open detail view for multi-file skills (no-op for single-file skills, instructions/prompts/agents) |
-| `space` | Cycle install scope for selected row (`none -> local -> global -> both -> none`) |
-| `r` | In `targets`, reset local override back to inherited global targets |
-| `/` | Open search |
-| `?` | Open help overlay |
-| `esc` | Universal back/close (`detail -> browser -> home -> quit`) |
+| Key           | Action                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| `left` / `h`  | Focus list pane                                                                                    |
+| `right` / `l` | Focus preview pane                                                                                 |
+| `up` / `down` | Move cursor up/down or scroll preview (by focus)                                                   |
+| `j` / `k`     | Vim-style vertical movement/scroll                                                                 |
+| `tab`         | Toggle list/preview focus                                                                          |
+| `enter`       | Open detail view for multi-file skills (no-op for single-file skills, instructions/prompts/agents) |
+| `space`       | Cycle install scope for selected row (`none -> local -> global -> both -> none`)                   |
+| `r`           | In `targets`, reset local override back to inherited global targets                                |
+| `/`           | Open search                                                                                        |
+| `?`           | Open help overlay                                                                                  |
+| `esc`         | Universal back/close (`detail -> browser -> home -> quit`)                                         |
 
 Current top-level categories in the TUI: `skills`, `instructions`, `prompts`, `agents`, `targets`, `registries`.
 
@@ -278,32 +277,32 @@ For registries, an additional marker can appear:
 
 For scripts and CI, use explicit subcommands instead of relying on no-args behavior:
 
-| Command | Description |
-| ------- | ----------- |
-| `positive-vibes init` | Scan project and create `vibes.yaml` |
-| `positive-vibes install <resource-type> [name...]` | Add resources to your manifest (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`) |
-| `positive-vibes install agents <name>` | Add an agent by name (registry-backed when available, else local path convention) |
-| `positive-vibes list <resource-type>` | List available resources (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`) |
-| `positive-vibes list agents` | List configured agents |
-| `positive-vibes show <resource-type> <name>` | Show detailed info for one resource |
-| `positive-vibes show agents <name>` | Show details for a configured agent |
-| `positive-vibes remove <resource-type> [name...]` | Remove resources from your manifest (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`) |
-| `positive-vibes remove agents <name>` | Remove one or more agents from your manifest |
-| `positive-vibes apply` | Sync resources to all configured target tool directories |
-| `positive-vibes apply --force` | Overwrite existing installed resources |
-| `positive-vibes apply --link` | Use symlinks instead of copies |
-| `positive-vibes apply --refresh` | Pull latest from git registries before applying |
-| `positive-vibes apply --global` | Apply only global config into current project targets |
-| `positive-vibes config paths` | Show resolved config file locations |
-| `positive-vibes config show` | Show merged config |
-| `positive-vibes config show --sources --relative-paths` | Show source-annotated paths relative to each config root |
-| `positive-vibes config diff` | Show global-only, local-only, overrides, and effective summary |
-| `positive-vibes config diff --json` | Emit the same config diff as machine-readable JSON |
-| `positive-vibes config validate` | Validate config and check for issues |
-| `positive-vibes config --color always validate` | Control color output for config commands (`auto`, `always`, `never`) |
-| `positive-vibes completion install` | Install shell completion for your current shell |
-| `positive-vibes completion uninstall` | Remove installed shell completion for your current shell |
-| `positive-vibes generate <desc>` | Generate a custom skill from a description |
+| Command                                                 | Description                                                                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `positive-vibes init`                                   | Scan project and create `vibes.yaml`                                                                         |
+| `positive-vibes install <resource-type> [name...]`      | Add resources to your manifest (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`)      |
+| `positive-vibes install agents <name>`                  | Add an agent by name (registry-backed when available, else local path convention)                            |
+| `positive-vibes list <resource-type>`                   | List available resources (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`)            |
+| `positive-vibes list agents`                            | List configured agents                                                                                       |
+| `positive-vibes show <resource-type> <name>`            | Show detailed info for one resource                                                                          |
+| `positive-vibes show agents <name>`                     | Show details for a configured agent                                                                          |
+| `positive-vibes remove <resource-type> [name...]`       | Remove resources from your manifest (`skills`, `agents`, `instructions`, `prompts`, `targets`, `registries`) |
+| `positive-vibes remove agents <name>`                   | Remove one or more agents from your manifest                                                                 |
+| `positive-vibes apply`                                  | Sync resources to all configured target tool directories                                                     |
+| `positive-vibes apply --force`                          | Overwrite existing installed resources                                                                       |
+| `positive-vibes apply --link`                           | Use symlinks instead of copies                                                                               |
+| `positive-vibes apply --refresh`                        | Pull latest from git registries before applying                                                              |
+| `positive-vibes apply --global`                         | Apply only global config into current project targets                                                        |
+| `positive-vibes config paths`                           | Show resolved config file locations                                                                          |
+| `positive-vibes config show`                            | Show merged config                                                                                           |
+| `positive-vibes config show --sources --relative-paths` | Show source-annotated paths relative to each config root                                                     |
+| `positive-vibes config diff`                            | Show global-only, local-only, overrides, and effective summary                                               |
+| `positive-vibes config diff --json`                     | Emit the same config diff as machine-readable JSON                                                           |
+| `positive-vibes config validate`                        | Validate config and check for issues                                                                         |
+| `positive-vibes config --color always validate`         | Control color output for config commands (`auto`, `always`, `never`)                                         |
+| `positive-vibes completion install`                     | Install shell completion for your current shell                                                              |
+| `positive-vibes completion uninstall`                   | Remove installed shell completion for your current shell                                                     |
+| `positive-vibes generate <desc>`                        | Generate a custom skill from a description                                                                   |
 
 ## How Skills Work
 

@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This repository is a Go project (module: `github.com/chaz8081/positive-vibes`, Go 1.24+).
+This repository is a Go project (module: `github.com/chaz8081/positive-vibes`, Go 1.25+).
 Use these notes for build/test and code style. If you need more context, read
 the README and package-level docs, then follow existing patterns.
 
