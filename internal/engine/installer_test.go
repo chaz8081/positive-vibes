@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,7 +9,32 @@ import (
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
+	"github.com/chaz8081/positive-vibes/pkg/schema"
 )
+
+type cleanupTrackingSource struct {
+	name                 string
+	fetchWithCleanupUsed bool
+	cleanupCalled        bool
+}
+
+func (s *cleanupTrackingSource) Name() string { return s.name }
+
+func (s *cleanupTrackingSource) Fetch(_ string) (*schema.Skill, string, error) {
+	return nil, "", fmt.Errorf("unexpected Fetch call")
+}
+
+func (s *cleanupTrackingSource) List() ([]string, error) {
+	return []string{"cleanup-skill"}, nil
+}
+
+func (s *cleanupTrackingSource) FetchWithCleanup(_ string) (*schema.Skill, string, func(), error) {
+	s.fetchWithCleanupUsed = true
+	cleanup := func() {
+		s.cleanupCalled = true
+	}
+	return &schema.Skill{Name: "cleanup-skill"}, "", cleanup, nil
+}
 
 func TestInstaller(t *testing.T) {
 	tmp := t.TempDir()
@@ -337,5 +363,28 @@ skills:
 	}
 	if len(m.Skills) != 0 {
 		t.Fatalf("expected 0 skills remaining, got %d", len(m.Skills))
+	}
+}
+
+func TestInstaller_RegistryLookupUsesFetchWithCleanup(t *testing.T) {
+	tmp := t.TempDir()
+	mfile := filepath.Join(tmp, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills: []
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	src := &cleanupTrackingSource{name: "cleanup-registry"}
+	inst := NewInstaller([]registry.SkillSource{src})
+	if err := inst.Install("cleanup-skill", mfile); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+	if !src.fetchWithCleanupUsed {
+		t.Fatalf("expected FetchWithCleanup to be used")
+	}
+	if !src.cleanupCalled {
+		t.Fatalf("expected cleanup to be called")
 	}
 }

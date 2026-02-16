@@ -323,12 +323,25 @@ func buildAllSources(merged *manifest.Manifest) []registry.SkillSource {
 // matching skill along with the registry name that provided it.
 func resolveSkillFromSources(name string, sources []registry.SkillSource) (*schema.Skill, string, error) {
 	for _, src := range sources {
-		skill, _, err := src.Fetch(name)
+		skill, err := fetchSkillForRead(src, name)
 		if err == nil {
 			return skill, src.Name(), nil
 		}
 	}
 	return nil, "", fmt.Errorf("skill not found: %s", name)
+}
+
+func fetchSkillForRead(src registry.SkillSource, name string) (*schema.Skill, error) {
+	if cf, ok := src.(registry.CleanableFetcher); ok {
+		skill, _, cleanup, err := cf.FetchWithCleanup(name)
+		if cleanup != nil {
+			cleanup()
+		}
+		return skill, err
+	}
+
+	skill, _, err := src.Fetch(name)
+	return skill, err
 }
 
 func resourceNameFromPath(resType ResourceType, relPath string) string {
