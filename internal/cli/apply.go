@@ -18,6 +18,8 @@ var (
 	applyLink    bool
 	applyRefresh bool
 	applyGlobal  bool
+	applyDryRun  bool
+	applyVerbose bool
 )
 
 func globalApplyNoOpMessage(m *manifest.Manifest) (string, bool) {
@@ -77,6 +79,14 @@ var applyCmd = &cobra.Command{
 	Use:   "apply",
 	Short: "Apply manifest to all targets",
 	Run: func(cmd *cobra.Command, args []string) {
+		if applyDryRun && applyForce {
+			fmt.Println("error: --dry-run and --force cannot be used together (dry-run always shows the full picture)")
+			return
+		}
+		if applyVerbose && !applyDryRun {
+			fmt.Println("warning: --verbose only has effect with --dry-run")
+		}
+
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
 		merged, err := resolveManifestForApply(project, globalPath, applyGlobal)
@@ -120,13 +130,38 @@ var applyCmd = &cobra.Command{
 		}
 
 		applier := engine.NewApplier(regs)
-		opts := target.InstallOpts{Force: applyForce, Link: applyLink}
+		opts := target.InstallOpts{Force: applyForce, Link: applyLink, DryRun: applyDryRun}
 
-		fmt.Println("Aligning your AI tools...")
-		fmt.Println()
+		if applyDryRun {
+			fmt.Println("Dry-run: previewing changes (no files will be written)")
+			fmt.Println()
+		} else {
+			fmt.Println("Aligning your AI tools...")
+			fmt.Println()
+		}
 		res, err := applier.ApplyManifest(merged, project, opts)
 		if err != nil {
 			fmt.Printf("error: %v\n", err)
+			return
+		}
+
+		// Dry-run output: show preview and return early
+		if applyDryRun {
+			if len(res.DryRunOps) == 0 && len(res.Errors) == 0 {
+				fmt.Println("Nothing to apply.")
+				return
+			}
+			for _, op := range res.DryRunOps {
+				fmt.Println("  " + op.ColoredString())
+				if applyVerbose && op.Diff != "" {
+					fmt.Print(engine.ColorDiff(op.Diff))
+				}
+			}
+			for _, e := range res.Errors {
+				fmt.Printf("  error: %s\n", e)
+			}
+			fmt.Println()
+			fmt.Println(engine.FormatDryRunSummary(res.DryRunOps))
 			return
 		}
 
@@ -163,6 +198,8 @@ var applyCmd = &cobra.Command{
 func init() {
 	applyCmd.Flags().BoolVarP(&applyForce, "force", "f", false, "overwrite existing skills")
 	applyCmd.Flags().BoolVarP(&applyLink, "link", "l", false, "symlink skills instead of copying")
+	applyCmd.Flags().BoolVarP(&applyDryRun, "dry-run", "n", false, "preview changes without writing files")
+	applyCmd.Flags().BoolVarP(&applyVerbose, "verbose", "v", false, "show content diffs for updates (with --dry-run)")
 	applyCmd.Flags().BoolVar(&applyRefresh, "refresh", false, "pull latest from git registries before applying")
 	applyCmd.Flags().BoolVar(&applyGlobal, "global", false, "apply only global config to current project targets")
 	rootCmd.AddCommand(applyCmd)
