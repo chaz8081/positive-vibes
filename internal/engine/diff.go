@@ -40,6 +40,10 @@ func unifiedDiff(nameA, nameB, a, b string) string {
 
 	linesA := splitLines(a)
 	linesB := splitLines(b)
+	const maxDiffCells = 10_000_000
+	if len(linesA)*len(linesB) > maxDiffCells {
+		return fmt.Sprintf("--- %s\n+++ %s\n@@ -0,0 +0,0 @@\n(diff omitted: files too large)\n", nameA, nameB)
+	}
 
 	edits := diffLines(linesA, linesB)
 	hunks := groupHunks(edits, 3)

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -66,5 +67,23 @@ func TestUnifiedDiff_ContextLines(t *testing.T) {
 	}
 	if !strings.Contains(result, " e") {
 		t.Fatalf("expected context line ' e' in diff, got:\n%s", result)
+	}
+}
+
+func TestUnifiedDiff_LargeInputsFallback(t *testing.T) {
+	t.Parallel()
+
+	var a, b strings.Builder
+	for i := 0; i < 5000; i++ {
+		fmt.Fprintf(&a, "line-%d\n", i)
+		fmt.Fprintf(&b, "line-%d-changed\n", i)
+	}
+
+	diff := unifiedDiff("a.txt", "b.txt", a.String(), b.String())
+	if diff == "" {
+		t.Fatalf("expected non-empty diff for large inputs")
+	}
+	if !strings.Contains(diff, "diff omitted") {
+		t.Fatalf("expected fallback message, got:\n%s", diff)
 	}
 }
