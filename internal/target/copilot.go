@@ -14,6 +14,7 @@ func (CopilotTarget) SkillDir() string       { return filepath.Join(".github", "
 func (CopilotTarget) InstructionDir() string { return filepath.Join(".github", "instructions") }
 func (CopilotTarget) AgentDir() string       { return filepath.Join(".github", "agents") }
 func (CopilotTarget) PromptDir() string      { return filepath.Join(".github", "prompts") }
+func (CopilotTarget) PromptSuffix() string   { return ".prompt.md" }
 
 func (t CopilotTarget) Install(skill *schema.Skill, sourceDir string, projectRoot string, opts InstallOpts) error {
 	return installGeneric(skill, sourceDir, projectRoot, t.SkillDir(), opts)

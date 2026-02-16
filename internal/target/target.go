@@ -45,6 +45,8 @@ type Target interface {
 	InstallAgent(name string, sourcePath string, projectRoot string, opts InstallOpts) error
 	// InstallPrompt writes a prompt file to the target's prompt/command directory.
 	InstallPrompt(name string, sourcePath string, projectRoot string, opts InstallOpts) error
+	// PromptSuffix returns the file extension used for prompt files (e.g. ".prompt.md").
+	PromptSuffix() string
 }
 
 // ResolveTargets maps target name strings to Target implementations.

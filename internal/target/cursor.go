@@ -15,6 +15,7 @@ func (CursorTarget) SkillDir() string       { return filepath.Join(".cursor", "s
 func (CursorTarget) InstructionDir() string { return filepath.Join(".cursor", "instructions") }
 func (CursorTarget) AgentDir() string       { return filepath.Join(".cursor", "agents") }
 func (CursorTarget) PromptDir() string      { return filepath.Join(".cursor", "prompts") }
+func (CursorTarget) PromptSuffix() string   { return ".md" }
 
 func (t CursorTarget) Install(skill *schema.Skill, sourceDir string, projectRoot string, opts InstallOpts) error {
 	return installGeneric(skill, sourceDir, projectRoot, t.SkillDir(), opts)

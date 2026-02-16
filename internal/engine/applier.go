@@ -47,6 +47,7 @@ type ApplyResult struct {
 	Skipped   int
 	Errors    []string
 	Ops       []ApplyOp
+	DryRunOps []DryRunOp
 }
 
 type Applier struct {
@@ -160,6 +161,16 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 
 		// install to each target
 		for _, t := range targets {
+			if opts.DryRun {
+				ops, previewErr := previewSkillInstall(sk, srcDir, projectDir, t)
+				if previewErr != nil {
+					errMsg := fmt.Sprintf("dry-run preview %s -> %s: %v", sk.Name, t.Name(), previewErr)
+					res.Errors = append(res.Errors, errMsg)
+				} else {
+					res.DryRunOps = append(res.DryRunOps, ops...)
+				}
+				continue
+			}
 			if t.SkillExists(sk.Name, projectDir) {
 				if !opts.Force {
 					res.Skipped++
@@ -234,6 +245,17 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				continue
 			}
 
+			if opts.DryRun {
+				op, previewErr := previewSingleFileInstall(inst.Name, inst.Content, sourcePath, projectDir, t.InstructionDir(), ".md", t, KindInstruction)
+				if previewErr != nil {
+					errMsg := fmt.Sprintf("dry-run preview instruction %s -> %s: %v", inst.Name, t.Name(), previewErr)
+					res.Errors = append(res.Errors, errMsg)
+				} else {
+					res.DryRunOps = append(res.DryRunOps, op)
+				}
+				continue
+			}
+
 			if err := t.InstallInstruction(inst.Name, inst.Content, sourcePath, projectDir, opts); err != nil {
 				errMsg := fmt.Sprintf("install instruction %s -> %s: %v", inst.Name, t.Name(), err)
 				res.Errors = append(res.Errors, errMsg)
@@ -300,6 +322,17 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		}
 
 		for _, t := range targets {
+			if opts.DryRun {
+				op, previewErr := previewSingleFileInstall(agent.Name, "", sourcePath, projectDir, t.AgentDir(), ".md", t, KindAgent)
+				if previewErr != nil {
+					errMsg := fmt.Sprintf("dry-run preview agent %s -> %s: %v", agent.Name, t.Name(), previewErr)
+					res.Errors = append(res.Errors, errMsg)
+				} else {
+					res.DryRunOps = append(res.DryRunOps, op)
+				}
+				continue
+			}
+
 			if err := t.InstallAgent(agent.Name, sourcePath, projectDir, opts); err != nil {
 				errMsg := fmt.Sprintf("install agent %s -> %s: %v", agent.Name, t.Name(), err)
 				res.Errors = append(res.Errors, errMsg)
@@ -355,6 +388,31 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		}
 
 		for _, t := range targets {
+			if opts.DryRun {
+				// Probe for unsupported targets by calling InstallPrompt with empty args.
+				// Cursor returns ErrPromptInstallUnsupported immediately regardless of args.
+				probeErr := t.InstallPrompt("", "", projectDir, target.InstallOpts{})
+				if errors.Is(probeErr, target.ErrPromptInstallUnsupported) {
+					res.DryRunOps = append(res.DryRunOps, DryRunOp{
+						Action:   DryRunSkip,
+						RelPath:  prompt.Name,
+						Target:   t.Name(),
+						Kind:     KindPrompt,
+						Resource: prompt.Name,
+						Reason:   "unsupported",
+					})
+				} else {
+					op, previewErr := previewSingleFileInstall(prompt.Name, "", sourcePath, projectDir, t.PromptDir(), t.PromptSuffix(), t, KindPrompt)
+					if previewErr != nil {
+						errMsg := fmt.Sprintf("dry-run preview prompt %s -> %s: %v", prompt.Name, t.Name(), previewErr)
+						res.Errors = append(res.Errors, errMsg)
+					} else {
+						res.DryRunOps = append(res.DryRunOps, op)
+					}
+				}
+				continue
+			}
+
 			if err := t.InstallPrompt(prompt.Name, sourcePath, projectDir, opts); err != nil {
 				if errors.Is(err, target.ErrPromptInstallUnsupported) {
 					res.Skipped++
