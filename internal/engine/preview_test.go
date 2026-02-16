@@ -111,3 +111,59 @@ func TestPreviewSkillInstall_AdditionalFiles(t *testing.T) {
 		t.Fatalf("expected at least 2 ops, got %d: %+v", len(ops), ops)
 	}
 }
+
+func TestPreviewSkillInstall_UnchangedIsSkip(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tgt := target.OpenCodeTarget{}
+	skill := &schema.Skill{Name: "demo"}
+	rendered, err := schema.RenderSkillFile(skill)
+	if err != nil {
+		t.Fatalf("render skill: %v", err)
+	}
+
+	skillDir := filepath.Join(dir, tgt.SkillDir(), "demo")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), rendered, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	ops, err := previewSkillInstall(skill, "", dir, tgt)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	if len(ops) != 1 {
+		t.Fatalf("expected 1 op, got %d", len(ops))
+	}
+	if ops[0].Action != DryRunSkip || ops[0].Reason != "unchanged" {
+		t.Fatalf("expected skip unchanged, got %v (%s)", ops[0].Action, ops[0].Reason)
+	}
+}
+
+func TestPreviewSingleFileInstall_UnchangedIsSkip(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tgt := target.OpenCodeTarget{}
+	name := "hello"
+	resDir := tgt.InstructionDir()
+	dest := filepath.Join(dir, resDir, name+".md")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(dest, []byte("content\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	op, err := previewSingleFileInstall(name, "content\n", "", dir, resDir, ".md", tgt, KindInstruction)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if op.Action != DryRunSkip || op.Reason != "unchanged" {
+		t.Fatalf("expected skip unchanged, got %v (%s)", op.Action, op.Reason)
+	}
+}

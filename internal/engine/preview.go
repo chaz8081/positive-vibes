@@ -48,13 +48,20 @@ func previewSkillInstall(skill *schema.Skill, sourceDir, projectRoot string, t t
 		})
 	} else {
 		diff := unifiedDiff(skillRelPath, skillRelPath, string(existing), string(rendered))
+		action := DryRunUpdate
+		reason := ""
+		if diff == "" {
+			action = DryRunSkip
+			reason = "unchanged"
+		}
 		ops = append(ops, DryRunOp{
-			Action:   DryRunUpdate,
+			Action:   action,
 			RelPath:  skillRelPath,
 			Target:   t.Name(),
 			Kind:     KindSkill,
 			Resource: skill.Name,
 			Diff:     diff,
+			Reason:   reason,
 		})
 	}
 
@@ -98,13 +105,20 @@ func previewSkillInstall(skill *schema.Skill, sourceDir, projectRoot string, t t
 				})
 			} else {
 				diff := unifiedDiff(fileRelPath, fileRelPath, string(existingData), string(srcData))
+				action := DryRunUpdate
+				reason := ""
+				if diff == "" {
+					action = DryRunSkip
+					reason = "unchanged"
+				}
 				ops = append(ops, DryRunOp{
-					Action:   DryRunUpdate,
+					Action:   action,
 					RelPath:  fileRelPath,
 					Target:   t.Name(),
 					Kind:     KindSkill,
 					Resource: skill.Name,
 					Diff:     diff,
+					Reason:   reason,
 				})
 			}
 			return nil
@@ -161,12 +175,19 @@ func previewSingleFileInstall(name, content, sourcePath, projectRoot, resDir, su
 	}
 
 	diff := unifiedDiff(relDest, relDest, string(existing), string(incoming))
+	action := DryRunUpdate
+	reason := ""
+	if diff == "" {
+		action = DryRunSkip
+		reason = "unchanged"
+	}
 	return DryRunOp{
-		Action:   DryRunUpdate,
+		Action:   action,
 		RelPath:  relDest,
 		Target:   t.Name(),
 		Kind:     kind,
 		Resource: name,
 		Diff:     diff,
+		Reason:   reason,
 	}, nil
 }
