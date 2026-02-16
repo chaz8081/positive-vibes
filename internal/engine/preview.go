@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -150,8 +151,7 @@ func previewSingleFileInstall(name, content, sourcePath, projectRoot, resDir, su
 		}
 		incoming = data
 	} else {
-		// Nothing to preview — shouldn't happen but handle gracefully
-		return DryRunOp{}, nil
+		return DryRunOp{}, fmt.Errorf("resource %q: no content or source path", name)
 	}
 
 	relDest, err := filepath.Rel(projectRoot, dest)

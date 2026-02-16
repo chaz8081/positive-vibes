@@ -167,3 +167,14 @@ func TestPreviewSingleFileInstall_UnchangedIsSkip(t *testing.T) {
 		t.Fatalf("expected skip unchanged, got %v (%s)", op.Action, op.Reason)
 	}
 }
+
+func TestPreviewSingleFileInstall_EmptyInputReturnsError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tgt := target.OpenCodeTarget{}
+	_, err := previewSingleFileInstall("name", "", "", dir, tgt.InstructionDir(), ".md", tgt, KindInstruction)
+	if err == nil {
+		t.Fatalf("expected error for empty preview input")
+	}
+}
