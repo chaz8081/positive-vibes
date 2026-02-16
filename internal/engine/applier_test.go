@@ -256,6 +256,98 @@ skills:
 	}
 }
 
+func TestApplierApply_LocalPathSkillRejectsPathTraversal(t *testing.T) {
+	workspace := t.TempDir()
+	projectDir := filepath.Join(workspace, "project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project dir: %v", err)
+	}
+
+	outsideSkillDir := filepath.Join(workspace, "outside-skill")
+	if err := os.MkdirAll(outsideSkillDir, 0o755); err != nil {
+		t.Fatalf("mkdir outside skill dir: %v", err)
+	}
+	skillContent := "---\nname: outside-skill\n---\n# Outside\n"
+	if err := os.WriteFile(filepath.Join(outsideSkillDir, "SKILL.md"), []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write outside SKILL.md: %v", err)
+	}
+
+	mfile := filepath.Join(projectDir, "vibes.yaml")
+	content := `targets: ["opencode"]
+skills:
+- name: outside-skill
+  path: ../outside-skill
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	a := NewApplier(nil)
+	res, err := a.Apply(mfile, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected traversal error, got none")
+	}
+	if !strings.Contains(res.Errors[0], "path escapes root") {
+		t.Fatalf("expected traversal error, got: %v", res.Errors)
+	}
+	if res.Installed != 0 {
+		t.Fatalf("expected no installs, got %d", res.Installed)
+	}
+
+	installed := filepath.Join(projectDir, ".opencode", "skills", "outside-skill", "SKILL.md")
+	if _, err := os.Stat(installed); !os.IsNotExist(err) {
+		t.Fatalf("expected no installed skill, stat err: %v", err)
+	}
+}
+
+func TestApplierApply_InstructionPathRejectsTraversal(t *testing.T) {
+	workspace := t.TempDir()
+	projectDir := filepath.Join(workspace, "project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project dir: %v", err)
+	}
+
+	outsideInstruction := filepath.Join(workspace, "outside.md")
+	if err := os.WriteFile(outsideInstruction, []byte("outside"), 0o644); err != nil {
+		t.Fatalf("write outside instruction: %v", err)
+	}
+
+	mfile := filepath.Join(projectDir, "vibes.yaml")
+	content := `targets: ["opencode"]
+instructions:
+- name: outside-inst
+  path: ../outside.md
+`
+	if err := os.WriteFile(mfile, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	a := NewApplier(nil)
+	res, err := a.Apply(mfile, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply error: %v", err)
+	}
+
+	if len(res.Errors) == 0 {
+		t.Fatalf("expected traversal error, got none")
+	}
+	if !strings.Contains(res.Errors[0], "path escapes root") {
+		t.Fatalf("expected traversal error, got: %v", res.Errors)
+	}
+	if res.Installed != 0 {
+		t.Fatalf("expected no installs, got %d", res.Installed)
+	}
+
+	installed := filepath.Join(projectDir, ".opencode", "instructions", "outside-inst.md")
+	if _, err := os.Stat(installed); !os.IsNotExist(err) {
+		t.Fatalf("expected no installed instruction, stat err: %v", err)
+	}
+}
+
 func TestApplierApply_OpsTracking(t *testing.T) {
 	tmp := t.TempDir()
 
