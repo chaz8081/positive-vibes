@@ -50,6 +50,112 @@ type ApplyResult struct {
 	DryRunOps []DryRunOp
 }
 
+type resourceContext struct {
+	projectDir string
+	opts       target.InstallOpts
+	res        *ApplyResult
+	fetcher    *Applier
+}
+
+type resourceSpec struct {
+	kind      ApplyOpKind
+	name      string
+	registry  string
+	path      string
+	content   string
+	suffix    string
+	applyTo   string
+	kindLabel string
+}
+
+type applyCallbacks struct {
+	resolvePath     func(projectDir, sourcePath string) string
+	fetchRegistry   func(spec resourceSpec) ([]byte, error)
+	preview         func(spec resourceSpec, content, sourcePath string, t target.Target) (DryRunOp, error)
+	install         func(spec resourceSpec, sourcePath string, t target.Target) error
+	dryRunSkip      func(spec resourceSpec, t target.Target) (DryRunOp, bool)
+	postTargetError func(spec resourceSpec, t target.Target, err error) *ApplyOp
+}
+
+func applyResource(ctx resourceContext, targets []target.Target, spec resourceSpec, callbacks applyCallbacks) {
+	sourcePath := ""
+	tempFile := ""
+	previewContent := ""
+
+	if spec.registry != "" {
+		data, fetchErr := callbacks.fetchRegistry(spec)
+		if fetchErr != nil {
+			errMsg := fmt.Sprintf("%s %s: fetch from registry: %v", spec.kindLabel, spec.name, fetchErr)
+			ctx.res.Errors = append(ctx.res.Errors, errMsg)
+			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, Kind: spec.kind, Status: OpError, Error: errMsg})
+			return
+		}
+		if ctx.opts.DryRun {
+			previewContent = string(data)
+		} else {
+			tmp, tmpErr := writeTempResourceFile(ctx.projectDir, "pv-"+spec.kindLabel+"-*", data)
+			if tmpErr != nil {
+				errMsg := fmt.Sprintf("%s %s: create temp file: %v", spec.kindLabel, spec.name, tmpErr)
+				ctx.res.Errors = append(ctx.res.Errors, errMsg)
+				ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, Kind: spec.kind, Status: OpError, Error: errMsg})
+				return
+			}
+			tempFile = tmp
+			sourcePath = tempFile
+		}
+	} else {
+		sourcePath = callbacks.resolvePath(ctx.projectDir, spec.path)
+	}
+
+	for _, t := range targets {
+		if spec.applyTo != "" && spec.applyTo != t.Name() {
+			continue
+		}
+
+		if ctx.opts.DryRun {
+			if callbacks.dryRunSkip != nil {
+				if op, ok := callbacks.dryRunSkip(spec, t); ok {
+					ctx.res.DryRunOps = append(ctx.res.DryRunOps, op)
+					continue
+				}
+			}
+
+			content := spec.content
+			if content == "" {
+				content = previewContent
+			}
+			op, previewErr := callbacks.preview(spec, content, sourcePath, t)
+			if previewErr != nil {
+				errMsg := fmt.Sprintf("dry-run preview %s %s -> %s: %v", spec.kindLabel, spec.name, t.Name(), previewErr)
+				ctx.res.Errors = append(ctx.res.Errors, errMsg)
+			} else {
+				ctx.res.DryRunOps = append(ctx.res.DryRunOps, op)
+			}
+			continue
+		}
+
+		if err := callbacks.install(spec, sourcePath, t); err != nil {
+			if callbacks.postTargetError != nil {
+				if op := callbacks.postTargetError(spec, t, err); op != nil {
+					ctx.res.Ops = append(ctx.res.Ops, *op)
+					ctx.res.Skipped++
+					continue
+				}
+			}
+			errMsg := fmt.Sprintf("install %s %s -> %s: %v", spec.kindLabel, spec.name, t.Name(), err)
+			ctx.res.Errors = append(ctx.res.Errors, errMsg)
+			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, TargetName: t.Name(), Kind: spec.kind, Status: OpError, Error: errMsg})
+		} else {
+			ctx.res.Installed++
+			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, TargetName: t.Name(), Kind: spec.kind, Status: OpInstalled})
+		}
+	}
+
+	if tempFile != "" {
+		_ = os.Remove(tempFile)
+	}
+}
+
 type Applier struct {
 	Registries []registry.SkillSource
 }
@@ -211,261 +317,110 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 	}
 
 	// iterate instructions
+	ctx := resourceContext{projectDir: projectDir, opts: opts, res: res, fetcher: a}
+	resolveRelative := func(projectDir, sourcePath string) string {
+		if sourcePath != "" && !filepath.IsAbs(sourcePath) {
+			return filepath.Join(projectDir, sourcePath)
+		}
+		return sourcePath
+	}
+
 	for _, inst := range m.Instructions {
-		sourcePath := ""
-		tempFile := ""
-		previewContent := ""
-		if inst.Registry != "" {
-			data, fetchErr := a.fetchResourceFileFromRegistry(inst.Registry, "instructions", inst.Path)
-			if fetchErr != nil {
-				errMsg := fmt.Sprintf("instruction %s: fetch from registry: %v", inst.Name, fetchErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
-				continue
-			}
-			if opts.DryRun {
-				previewContent = string(data)
-			} else {
-				tmp, tmpErr := writeTempResourceFile(projectDir, "pv-inst-*", data)
-				if tmpErr != nil {
-					errMsg := fmt.Sprintf("instruction %s: create temp file: %v", inst.Name, tmpErr)
-					res.Errors = append(res.Errors, errMsg)
-					res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
-					continue
-				}
-				tempFile = tmp
-				sourcePath = tempFile
-			}
-		} else {
-			// Resolve source path relative to project directory
-			sourcePath = inst.Path
-			if sourcePath != "" && !filepath.IsAbs(sourcePath) {
-				sourcePath = filepath.Join(projectDir, sourcePath)
-			}
+		spec := resourceSpec{
+			kind:      KindInstruction,
+			name:      inst.Name,
+			registry:  inst.Registry,
+			path:      inst.Path,
+			content:   inst.Content,
+			suffix:    ".md",
+			applyTo:   inst.ApplyTo,
+			kindLabel: "instruction",
 		}
-
-		for _, t := range targets {
-			// If ApplyTo is set, only install to matching target
-			if inst.ApplyTo != "" && inst.ApplyTo != t.Name() {
-				continue
-			}
-
-			if opts.DryRun {
-				content := inst.Content
-				if content == "" {
-					content = previewContent
-				}
-				op, previewErr := previewSingleFileInstall(inst.Name, content, sourcePath, projectDir, t.InstructionDir(), ".md", t, KindInstruction)
-				if previewErr != nil {
-					errMsg := fmt.Sprintf("dry-run preview instruction %s -> %s: %v", inst.Name, t.Name(), previewErr)
-					res.Errors = append(res.Errors, errMsg)
-				} else {
-					res.DryRunOps = append(res.DryRunOps, op)
-				}
-				continue
-			}
-
-			if err := t.InstallInstruction(inst.Name, inst.Content, sourcePath, projectDir, opts); err != nil {
-				errMsg := fmt.Sprintf("install instruction %s -> %s: %v", inst.Name, t.Name(), err)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  inst.Name,
-					TargetName: t.Name(),
-					Kind:       KindInstruction,
-					Status:     OpError,
-					Error:      errMsg,
-				})
-			} else {
-				res.Installed++
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  inst.Name,
-					TargetName: t.Name(),
-					Kind:       KindInstruction,
-					Status:     OpInstalled,
-				})
-			}
-		}
-		if tempFile != "" {
-			_ = os.Remove(tempFile)
-		}
+		applyResource(ctx, targets, spec, applyCallbacks{
+			resolvePath: resolveRelative,
+			fetchRegistry: func(spec resourceSpec) ([]byte, error) {
+				return a.fetchResourceFileFromRegistry(spec.registry, "instructions", spec.path)
+			},
+			preview: func(spec resourceSpec, content, sourcePath string, t target.Target) (DryRunOp, error) {
+				return previewSingleFileInstall(spec.name, content, sourcePath, projectDir, t.InstructionDir(), spec.suffix, t, KindInstruction)
+			},
+			install: func(spec resourceSpec, sourcePath string, t target.Target) error {
+				return t.InstallInstruction(spec.name, spec.content, sourcePath, projectDir, opts)
+			},
+		})
 	}
 
-	// iterate agents
 	for _, agent := range m.Agents {
-		// Resolve source path: local path or registry fetch
-		sourcePath := agent.Path
-		previewContent := ""
-		if agent.Registry == "" && sourcePath != "" && !filepath.IsAbs(sourcePath) {
-			sourcePath = filepath.Join(projectDir, sourcePath)
+		spec := resourceSpec{
+			kind:      KindAgent,
+			name:      agent.Name,
+			registry:  agent.Registry,
+			path:      agent.Path,
+			suffix:    ".md",
+			kindLabel: "agent",
 		}
-
-		// If agent.Registry is set, fetch the file from the registry
-		var tempFile string
-		if agent.Registry != "" {
-			data, fetchErr := a.fetchResourceFileFromRegistry(agent.Registry, "agents", agent.Path)
-			if fetchErr != nil {
-				errMsg := fmt.Sprintf("agent %s: fetch from registry: %v", agent.Name, fetchErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName: agent.Name,
-					Kind:      KindAgent,
-					Status:    OpError,
-					Error:     errMsg,
-				})
-				continue
-			}
-			if opts.DryRun {
-				previewContent = string(data)
-			} else {
-				tmp, tmpErr := writeTempResourceFile(projectDir, "pv-agent-*", data)
-				if tmpErr != nil {
-					errMsg := fmt.Sprintf("agent %s: create temp file: %v", agent.Name, tmpErr)
-					res.Errors = append(res.Errors, errMsg)
-					res.Ops = append(res.Ops, ApplyOp{
-						SkillName: agent.Name,
-						Kind:      KindAgent,
-						Status:    OpError,
-						Error:     errMsg,
-					})
-					continue
-				}
-				tempFile = tmp
-				sourcePath = tempFile
-			}
-		}
-
-		for _, t := range targets {
-			if opts.DryRun {
-				op, previewErr := previewSingleFileInstall(agent.Name, previewContent, sourcePath, projectDir, t.AgentDir(), ".md", t, KindAgent)
-				if previewErr != nil {
-					errMsg := fmt.Sprintf("dry-run preview agent %s -> %s: %v", agent.Name, t.Name(), previewErr)
-					res.Errors = append(res.Errors, errMsg)
-				} else {
-					res.DryRunOps = append(res.DryRunOps, op)
-				}
-				continue
-			}
-
-			if err := t.InstallAgent(agent.Name, sourcePath, projectDir, opts); err != nil {
-				errMsg := fmt.Sprintf("install agent %s -> %s: %v", agent.Name, t.Name(), err)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  agent.Name,
-					TargetName: t.Name(),
-					Kind:       KindAgent,
-					Status:     OpError,
-					Error:      errMsg,
-				})
-			} else {
-				res.Installed++
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  agent.Name,
-					TargetName: t.Name(),
-					Kind:       KindAgent,
-					Status:     OpInstalled,
-				})
-			}
-		}
-
-		// Clean up temp file after installing to all targets
-		if tempFile != "" {
-			_ = os.Remove(tempFile)
-		}
+		applyResource(ctx, targets, spec, applyCallbacks{
+			resolvePath: resolveRelative,
+			fetchRegistry: func(spec resourceSpec) ([]byte, error) {
+				return a.fetchResourceFileFromRegistry(spec.registry, "agents", spec.path)
+			},
+			preview: func(spec resourceSpec, content, sourcePath string, t target.Target) (DryRunOp, error) {
+				return previewSingleFileInstall(spec.name, content, sourcePath, projectDir, t.AgentDir(), spec.suffix, t, KindAgent)
+			},
+			install: func(spec resourceSpec, sourcePath string, t target.Target) error {
+				return t.InstallAgent(spec.name, sourcePath, projectDir, opts)
+			},
+		})
 	}
 
-	// iterate prompts
 	for _, prompt := range m.Prompts {
-		sourcePath := prompt.Path
-		previewContent := ""
-		if prompt.Registry == "" && sourcePath != "" && !filepath.IsAbs(sourcePath) {
-			sourcePath = filepath.Join(projectDir, sourcePath)
+		spec := resourceSpec{
+			kind:      KindPrompt,
+			name:      prompt.Name,
+			registry:  prompt.Registry,
+			path:      prompt.Path,
+			suffix:    "",
+			kindLabel: "prompt",
 		}
-
-		var tempFile string
-		if prompt.Registry != "" {
-			data, fetchErr := a.fetchResourceFileFromRegistry(prompt.Registry, "prompts", prompt.Path)
-			if fetchErr != nil {
-				errMsg := fmt.Sprintf("prompt %s: fetch from registry: %v", prompt.Name, fetchErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{SkillName: prompt.Name, Kind: KindPrompt, Status: OpError, Error: errMsg})
-				continue
-			}
-			if opts.DryRun {
-				previewContent = string(data)
-			} else {
-				tmp, tmpErr := writeTempResourceFile(projectDir, "pv-prompt-*", data)
-				if tmpErr != nil {
-					errMsg := fmt.Sprintf("prompt %s: create temp file: %v", prompt.Name, tmpErr)
-					res.Errors = append(res.Errors, errMsg)
-					res.Ops = append(res.Ops, ApplyOp{SkillName: prompt.Name, Kind: KindPrompt, Status: OpError, Error: errMsg})
-					continue
-				}
-				tempFile = tmp
-				sourcePath = tempFile
-			}
-		}
-
-		for _, t := range targets {
-			if opts.DryRun {
-				// Check if target supports prompts without invoking install
-				// (which could create directories as a side effect).
+		applyResource(ctx, targets, spec, applyCallbacks{
+			resolvePath: resolveRelative,
+			fetchRegistry: func(spec resourceSpec) ([]byte, error) {
+				return a.fetchResourceFileFromRegistry(spec.registry, "prompts", spec.path)
+			},
+			preview: func(spec resourceSpec, content, sourcePath string, t target.Target) (DryRunOp, error) {
+				suffix := t.PromptSuffix()
+				return previewSingleFileInstall(spec.name, content, sourcePath, projectDir, t.PromptDir(), suffix, t, KindPrompt)
+			},
+			install: func(spec resourceSpec, sourcePath string, t target.Target) error {
+				return t.InstallPrompt(spec.name, sourcePath, projectDir, opts)
+			},
+			dryRunSkip: func(spec resourceSpec, t target.Target) (DryRunOp, bool) {
 				if !t.SupportsPrompts() {
-					promptRelPath := filepath.Join(t.PromptDir(), prompt.Name+t.PromptSuffix())
-					res.DryRunOps = append(res.DryRunOps, DryRunOp{
+					promptRelPath := filepath.Join(t.PromptDir(), spec.name+t.PromptSuffix())
+					return DryRunOp{
 						Action:   DryRunSkip,
 						RelPath:  promptRelPath,
 						Target:   t.Name(),
 						Kind:     KindPrompt,
-						Resource: prompt.Name,
+						Resource: spec.name,
 						Reason:   "unsupported",
-					})
-				} else {
-					op, previewErr := previewSingleFileInstall(prompt.Name, previewContent, sourcePath, projectDir, t.PromptDir(), t.PromptSuffix(), t, KindPrompt)
-					if previewErr != nil {
-						errMsg := fmt.Sprintf("dry-run preview prompt %s -> %s: %v", prompt.Name, t.Name(), previewErr)
-						res.Errors = append(res.Errors, errMsg)
-					} else {
-						res.DryRunOps = append(res.DryRunOps, op)
-					}
+					}, true
 				}
-				continue
-			}
-
-			if err := t.InstallPrompt(prompt.Name, sourcePath, projectDir, opts); err != nil {
+				return DryRunOp{}, false
+			},
+			postTargetError: func(spec resourceSpec, t target.Target, err error) *ApplyOp {
 				if errors.Is(err, target.ErrPromptInstallUnsupported) {
-					res.Skipped++
-					res.Ops = append(res.Ops, ApplyOp{
-						SkillName:  prompt.Name,
+					return &ApplyOp{
+						SkillName:  spec.name,
 						TargetName: t.Name(),
 						Kind:       KindPrompt,
 						Status:     OpSkipped,
 						Error:      err.Error(),
-					})
-					continue
+					}
 				}
-				errMsg := fmt.Sprintf("install prompt %s -> %s: %v", prompt.Name, t.Name(), err)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  prompt.Name,
-					TargetName: t.Name(),
-					Kind:       KindPrompt,
-					Status:     OpError,
-					Error:      errMsg,
-				})
-			} else {
-				res.Installed++
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  prompt.Name,
-					TargetName: t.Name(),
-					Kind:       KindPrompt,
-					Status:     OpInstalled,
-				})
-			}
-		}
-
-		if tempFile != "" {
-			_ = os.Remove(tempFile)
-		}
+				return nil
+			},
+		})
 	}
 
 	return res, nil
