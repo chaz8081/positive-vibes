@@ -360,6 +360,63 @@ func TestApplyManifest_DryRun_RegistryDoesNotWriteTempFiles(t *testing.T) {
 	}
 }
 
+func TestApplyManifest_DryRun_OpCountsByKind(t *testing.T) {
+	tmp := t.TempDir()
+
+	agentSrc := filepath.Join(tmp, "sources", "my-agent.md")
+	promptSrc := filepath.Join(tmp, "sources", "my-prompt.md")
+	if err := os.MkdirAll(filepath.Dir(agentSrc), 0o755); err != nil {
+		t.Fatalf("mkdir sources: %v", err)
+	}
+	if err := os.WriteFile(agentSrc, []byte("# Agent\nDo things."), 0o644); err != nil {
+		t.Fatalf("write agent: %v", err)
+	}
+	if err := os.WriteFile(promptSrc, []byte("---\ndescription: Prompt\n---\nDo stuff."), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+
+	m := &manifest.Manifest{
+		Targets: []string{"opencode"},
+		Skills:  []manifest.SkillRef{{Name: "conventional-commits"}},
+		Instructions: []manifest.InstructionRef{{
+			Name:    "test-inst",
+			Content: "Some inline instruction content.",
+		}},
+		Agents: []manifest.AgentRef{{
+			Name: "my-agent",
+			Path: "./sources/my-agent.md",
+		}},
+		Prompts: []manifest.PromptRef{{
+			Name: "my-prompt",
+			Path: "./sources/my-prompt.md",
+		}},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.ApplyManifest(m, tmp, target.InstallOpts{DryRun: true})
+	if err != nil {
+		t.Fatalf("dry-run apply error: %v", err)
+	}
+
+	counts := map[ApplyOpKind]int{}
+	for _, op := range res.DryRunOps {
+		counts[op.Kind]++
+	}
+	if counts[KindSkill] != 1 {
+		t.Fatalf("expected 1 skill op, got %d", counts[KindSkill])
+	}
+	if counts[KindInstruction] != 1 {
+		t.Fatalf("expected 1 instruction op, got %d", counts[KindInstruction])
+	}
+	if counts[KindAgent] != 1 {
+		t.Fatalf("expected 1 agent op, got %d", counts[KindAgent])
+	}
+	if counts[KindPrompt] != 1 {
+		t.Fatalf("expected 1 prompt op, got %d", counts[KindPrompt])
+	}
+}
+
 type fakeResourceRegistry struct {
 	name string
 	data map[string][]byte

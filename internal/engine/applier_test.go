@@ -369,6 +369,97 @@ skills:
 	}
 }
 
+func TestApplyManifest_InstructionApplyToFiltering(t *testing.T) {
+	tmp := t.TempDir()
+
+	m := &manifest.Manifest{
+		Targets: []string{"opencode", "vscode-copilot"},
+		Instructions: []manifest.InstructionRef{{
+			Name:    "opencode-only",
+			Content: "Only opencode gets this.",
+			ApplyTo: "opencode",
+		}},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.ApplyManifest(m, tmp, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply manifest error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+
+	if _, err := os.Stat(filepath.Join(tmp, ".opencode", "instructions", "opencode-only.md")); err != nil {
+		t.Fatalf("expected opencode instruction to be installed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, ".github", "instructions", "opencode-only.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected vscode-copilot instruction to be skipped")
+	}
+}
+
+func TestApplyManifest_PromptUnsupportedSkip(t *testing.T) {
+	tmp := t.TempDir()
+
+	promptSrc := filepath.Join(tmp, "prompts", "my-prompt.md")
+	if err := os.MkdirAll(filepath.Dir(promptSrc), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(promptSrc, []byte("---\ndescription: Prompt\n---\nDo something"), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+
+	m := &manifest.Manifest{
+		Targets: []string{"cursor"},
+		Prompts: []manifest.PromptRef{{
+			Name: "my-prompt",
+			Path: "./prompts/my-prompt.md",
+		}},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+	res, err := a.ApplyManifest(m, tmp, target.InstallOpts{Force: true})
+	if err != nil {
+		t.Fatalf("apply manifest error: %v", err)
+	}
+	if len(res.Errors) > 0 {
+		t.Fatalf("unexpected errors: %v", res.Errors)
+	}
+	if res.Skipped != 1 {
+		t.Fatalf("expected 1 skipped prompt, got %d", res.Skipped)
+	}
+
+	cursorPrompt := filepath.Join(tmp, ".cursor", "prompts", "my-prompt.md")
+	if _, err := os.Stat(cursorPrompt); !os.IsNotExist(err) {
+		t.Fatalf("expected cursor prompt not to be installed")
+	}
+}
+
+func TestApplyManifest_SkillForceSkipBehavior(t *testing.T) {
+	tmp := t.TempDir()
+	m := &manifest.Manifest{
+		Targets: []string{"opencode"},
+		Skills:  []manifest.SkillRef{{Name: "conventional-commits"}},
+	}
+
+	regs := []registry.SkillSource{registry.NewEmbeddedRegistry()}
+	a := NewApplier(regs)
+
+	if _, err := a.ApplyManifest(m, tmp, target.InstallOpts{Force: true}); err != nil {
+		t.Fatalf("apply manifest error: %v", err)
+	}
+
+	res, err := a.ApplyManifest(m, tmp, target.InstallOpts{Force: false})
+	if err != nil {
+		t.Fatalf("apply manifest error: %v", err)
+	}
+	if res.Skipped != 1 {
+		t.Fatalf("expected 1 skipped, got %d", res.Skipped)
+	}
+}
+
 // --- Instruction installation tests ---
 
 func TestApplierApply_InstructionWithContent(t *testing.T) {
