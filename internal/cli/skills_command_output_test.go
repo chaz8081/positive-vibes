@@ -84,6 +84,11 @@ func TestListCmd_TargetsProducesOutput(t *testing.T) {
 	projectDir = t.TempDir()
 	t.Cleanup(func() { projectDir = "." })
 
+	manifestPath := filepath.Join(projectDir, "vibes.yaml")
+	if err := os.WriteFile(manifestPath, []byte("targets: [\"opencode\"]\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
 	stdout, stderr := captureStdoutStderr(t, func() {
 		err := listCmd.RunE(listCmd, []string{"targets"})
 		if err != nil {
