@@ -3,6 +3,7 @@ package cli
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,6 +77,58 @@ func TestRemoveSkillsRun_PrintsMutationReportOnPartialFailure(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "error: invalid argument") {
 		t.Fatalf("stderr = %q, want command error", stderr)
+	}
+}
+
+func TestListCmd_TargetsProducesOutput(t *testing.T) {
+	projectDir = t.TempDir()
+	t.Cleanup(func() { projectDir = "." })
+
+	stdout, stderr := captureStdoutStderr(t, func() {
+		err := listCmd.RunE(listCmd, []string{"targets"})
+		if err != nil {
+			t.Fatalf("list targets run error: %v", err)
+		}
+	})
+
+	if !strings.Contains(stdout, "Targets:") {
+		t.Fatalf("stdout = %q, want targets list output", stdout)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("stderr = %q, expected empty stderr", stderr)
+	}
+}
+
+func TestListCmd_RegistriesProducesOutput(t *testing.T) {
+	projectDir = t.TempDir()
+	t.Cleanup(func() { projectDir = "." })
+
+	manifestPath := filepath.Join(projectDir, "vibes.yaml")
+	content := `targets: ["opencode"]
+registries:
+  - name: demo
+    url: https://example.com/demo.git
+    ref: main
+`
+	if err := os.WriteFile(manifestPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	stdout, stderr := captureStdoutStderr(t, func() {
+		err := listCmd.RunE(listCmd, []string{"registries"})
+		if err != nil {
+			t.Fatalf("list registries run error: %v", err)
+		}
+	})
+
+	if !strings.Contains(stdout, "Registries:") {
+		t.Fatalf("stdout = %q, want registries list output", stdout)
+	}
+	if !strings.Contains(stdout, "demo") {
+		t.Fatalf("stdout = %q, want registry name", stdout)
+	}
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatalf("stderr = %q, expected empty stderr", stderr)
 	}
 }
 

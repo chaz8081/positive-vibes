@@ -18,7 +18,7 @@ var listCmd = &cobra.Command{
 	Short: "List available resources",
 	Long: `List available resources of a given type.
 
-Resource types: skills, agents, instructions, prompts
+Resource types: skills, agents, instructions, prompts, targets, registries
 
 Examples:
   positive-vibes list skills
@@ -26,7 +26,9 @@ Examples:
   positive-vibes list skills --installed-only
   positive-vibes list skills --json
   positive-vibes list agents
-  positive-vibes list instructions`,
+  positive-vibes list instructions
+  positive-vibes list targets
+  positive-vibes list registries`,
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: makeValidArgsFunction(""),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -51,6 +53,10 @@ Examples:
 			listInstructionsRun(merged)
 		case ResourcePrompts:
 			listPromptsRun(merged)
+		case ResourceTargets:
+			listTargetsRun(merged)
+		case ResourceRegistries:
+			listRegistriesRun(merged)
 		}
 		return nil
 	},
@@ -103,6 +109,28 @@ func listPromptsRun(merged *manifest.Manifest) {
 	}
 
 	fmt.Print(formatResourceList(ResourcePrompts, items))
+}
+
+func listTargetsRun(merged *manifest.Manifest) {
+	items := collectAvailableTargets(merged)
+
+	if listJSON {
+		fmt.Println(formatResourceListJSON(ResourceTargets, items))
+		return
+	}
+
+	fmt.Print(formatResourceList(ResourceTargets, items))
+}
+
+func listRegistriesRun(merged *manifest.Manifest) {
+	items := collectAvailableRegistries(merged)
+
+	if listJSON {
+		fmt.Println(formatResourceListJSON(ResourceRegistries, items))
+		return
+	}
+
+	fmt.Print(formatResourceList(ResourceRegistries, items))
 }
 
 func init() {
