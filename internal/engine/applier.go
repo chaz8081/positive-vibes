@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/chaz8081/positive-vibes/internal/fsutil"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/chaz8081/positive-vibes/internal/target"
@@ -69,7 +70,7 @@ type resourceSpec struct {
 }
 
 type applyCallbacks struct {
-	resolvePath     func(projectDir, sourcePath string) string
+	resolvePath     func(projectDir, sourcePath string) (string, error)
 	fetchRegistry   func(spec resourceSpec) ([]byte, error)
 	preview         func(spec resourceSpec, content, sourcePath string, t target.Target) (DryRunOp, error)
 	install         func(spec resourceSpec, sourcePath string, t target.Target) error
@@ -104,7 +105,14 @@ func applyResource(ctx resourceContext, targets []target.Target, spec resourceSp
 			sourcePath = tempFile
 		}
 	} else {
-		sourcePath = callbacks.resolvePath(ctx.projectDir, spec.path)
+		resolvedPath, resolveErr := callbacks.resolvePath(ctx.projectDir, spec.path)
+		if resolveErr != nil {
+			errMsg := fmt.Sprintf("%s %s: resolve local path: %v", spec.kindLabel, spec.name, resolveErr)
+			ctx.res.Errors = append(ctx.res.Errors, errMsg)
+			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{ResourceName: spec.name, Kind: spec.kind, Status: OpError, Error: errMsg})
+			return
+		}
+		sourcePath = resolvedPath
 	}
 
 	for _, t := range targets {
@@ -213,18 +221,23 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 			// local override path -- resolve relative to project directory
 			resolvedPath := s.Path
 			if !filepath.IsAbs(resolvedPath) {
-				resolvedPath = filepath.Join(projectDir, resolvedPath)
-			}
-			p := filepath.Join(resolvedPath, "SKILL.md")
-			data, err := os.ReadFile(p)
-			if err != nil {
-				localPathErr = fmt.Errorf("skill %s: read local skill file: %w", s.Name, err)
-			} else {
-				sk, err = schema.ParseSkillFile(data)
+				resolvedPath, err = fsutil.ResolveWithinRoot(projectDir, resolvedPath)
 				if err != nil {
-					localPathErr = fmt.Errorf("skill %s: parse local skill file: %w", s.Name, err)
+					localPathErr = fmt.Errorf("skill %s: resolve local skill path: %w", s.Name, err)
+				}
+			}
+			if localPathErr == nil {
+				p := filepath.Join(resolvedPath, "SKILL.md")
+				data, err := os.ReadFile(p)
+				if err != nil {
+					localPathErr = fmt.Errorf("skill %s: read local skill file: %w", s.Name, err)
 				} else {
-					srcDir = resolvedPath
+					sk, err = schema.ParseSkillFile(data)
+					if err != nil {
+						localPathErr = fmt.Errorf("skill %s: parse local skill file: %w", s.Name, err)
+					} else {
+						srcDir = resolvedPath
+					}
 				}
 			}
 		}
@@ -318,11 +331,11 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 
 	// iterate instructions
 	ctx := resourceContext{projectDir: projectDir, opts: opts, res: res, fetcher: a}
-	resolveRelative := func(projectDir, sourcePath string) string {
+	resolveRelative := func(projectDir, sourcePath string) (string, error) {
 		if sourcePath != "" && !filepath.IsAbs(sourcePath) {
-			return filepath.Join(projectDir, sourcePath)
+			return fsutil.ResolveWithinRoot(projectDir, sourcePath)
 		}
-		return sourcePath
+		return sourcePath, nil
 	}
 
 	for _, inst := range m.Instructions {
