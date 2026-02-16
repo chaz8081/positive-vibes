@@ -22,6 +22,8 @@ Examples:
 	Args:              cobra.ExactArgs(2),
 	ValidArgsFunction: makeValidArgsFunction("all"),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+		cmd.SilenceErrors = true
 		resType, err := ParseResourceType(args[0])
 		if err != nil {
 			return err
