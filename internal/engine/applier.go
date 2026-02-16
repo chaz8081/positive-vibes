@@ -214,6 +214,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 	for _, inst := range m.Instructions {
 		sourcePath := ""
 		tempFile := ""
+		previewContent := ""
 		if inst.Registry != "" {
 			data, fetchErr := a.fetchResourceFileFromRegistry(inst.Registry, "instructions", inst.Path)
 			if fetchErr != nil {
@@ -222,15 +223,19 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
 				continue
 			}
-			tmp, tmpErr := writeTempResourceFile(projectDir, "pv-inst-*", data)
-			if tmpErr != nil {
-				errMsg := fmt.Sprintf("instruction %s: create temp file: %v", inst.Name, tmpErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
-				continue
+			if opts.DryRun {
+				previewContent = string(data)
+			} else {
+				tmp, tmpErr := writeTempResourceFile(projectDir, "pv-inst-*", data)
+				if tmpErr != nil {
+					errMsg := fmt.Sprintf("instruction %s: create temp file: %v", inst.Name, tmpErr)
+					res.Errors = append(res.Errors, errMsg)
+					res.Ops = append(res.Ops, ApplyOp{SkillName: inst.Name, Kind: KindInstruction, Status: OpError, Error: errMsg})
+					continue
+				}
+				tempFile = tmp
+				sourcePath = tempFile
 			}
-			tempFile = tmp
-			sourcePath = tempFile
 		} else {
 			// Resolve source path relative to project directory
 			sourcePath = inst.Path
@@ -246,7 +251,11 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 			}
 
 			if opts.DryRun {
-				op, previewErr := previewSingleFileInstall(inst.Name, inst.Content, sourcePath, projectDir, t.InstructionDir(), ".md", t, KindInstruction)
+				content := inst.Content
+				if content == "" {
+					content = previewContent
+				}
+				op, previewErr := previewSingleFileInstall(inst.Name, content, sourcePath, projectDir, t.InstructionDir(), ".md", t, KindInstruction)
 				if previewErr != nil {
 					errMsg := fmt.Sprintf("dry-run preview instruction %s -> %s: %v", inst.Name, t.Name(), previewErr)
 					res.Errors = append(res.Errors, errMsg)
@@ -285,6 +294,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 	for _, agent := range m.Agents {
 		// Resolve source path: local path or registry fetch
 		sourcePath := agent.Path
+		previewContent := ""
 		if agent.Registry == "" && sourcePath != "" && !filepath.IsAbs(sourcePath) {
 			sourcePath = filepath.Join(projectDir, sourcePath)
 		}
@@ -304,26 +314,29 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				})
 				continue
 			}
-
-			tmp, tmpErr := writeTempResourceFile(projectDir, "pv-agent-*", data)
-			if tmpErr != nil {
-				errMsg := fmt.Sprintf("agent %s: create temp file: %v", agent.Name, tmpErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{
-					SkillName: agent.Name,
-					Kind:      KindAgent,
-					Status:    OpError,
-					Error:     errMsg,
-				})
-				continue
+			if opts.DryRun {
+				previewContent = string(data)
+			} else {
+				tmp, tmpErr := writeTempResourceFile(projectDir, "pv-agent-*", data)
+				if tmpErr != nil {
+					errMsg := fmt.Sprintf("agent %s: create temp file: %v", agent.Name, tmpErr)
+					res.Errors = append(res.Errors, errMsg)
+					res.Ops = append(res.Ops, ApplyOp{
+						SkillName: agent.Name,
+						Kind:      KindAgent,
+						Status:    OpError,
+						Error:     errMsg,
+					})
+					continue
+				}
+				tempFile = tmp
+				sourcePath = tempFile
 			}
-			tempFile = tmp
-			sourcePath = tempFile
 		}
 
 		for _, t := range targets {
 			if opts.DryRun {
-				op, previewErr := previewSingleFileInstall(agent.Name, "", sourcePath, projectDir, t.AgentDir(), ".md", t, KindAgent)
+				op, previewErr := previewSingleFileInstall(agent.Name, previewContent, sourcePath, projectDir, t.AgentDir(), ".md", t, KindAgent)
 				if previewErr != nil {
 					errMsg := fmt.Sprintf("dry-run preview agent %s -> %s: %v", agent.Name, t.Name(), previewErr)
 					res.Errors = append(res.Errors, errMsg)
@@ -363,6 +376,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 	// iterate prompts
 	for _, prompt := range m.Prompts {
 		sourcePath := prompt.Path
+		previewContent := ""
 		if prompt.Registry == "" && sourcePath != "" && !filepath.IsAbs(sourcePath) {
 			sourcePath = filepath.Join(projectDir, sourcePath)
 		}
@@ -376,15 +390,19 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				res.Ops = append(res.Ops, ApplyOp{SkillName: prompt.Name, Kind: KindPrompt, Status: OpError, Error: errMsg})
 				continue
 			}
-			tmp, tmpErr := writeTempResourceFile(projectDir, "pv-prompt-*", data)
-			if tmpErr != nil {
-				errMsg := fmt.Sprintf("prompt %s: create temp file: %v", prompt.Name, tmpErr)
-				res.Errors = append(res.Errors, errMsg)
-				res.Ops = append(res.Ops, ApplyOp{SkillName: prompt.Name, Kind: KindPrompt, Status: OpError, Error: errMsg})
-				continue
+			if opts.DryRun {
+				previewContent = string(data)
+			} else {
+				tmp, tmpErr := writeTempResourceFile(projectDir, "pv-prompt-*", data)
+				if tmpErr != nil {
+					errMsg := fmt.Sprintf("prompt %s: create temp file: %v", prompt.Name, tmpErr)
+					res.Errors = append(res.Errors, errMsg)
+					res.Ops = append(res.Ops, ApplyOp{SkillName: prompt.Name, Kind: KindPrompt, Status: OpError, Error: errMsg})
+					continue
+				}
+				tempFile = tmp
+				sourcePath = tempFile
 			}
-			tempFile = tmp
-			sourcePath = tempFile
 		}
 
 		for _, t := range targets {
@@ -402,7 +420,7 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 						Reason:   "unsupported",
 					})
 				} else {
-					op, previewErr := previewSingleFileInstall(prompt.Name, "", sourcePath, projectDir, t.PromptDir(), t.PromptSuffix(), t, KindPrompt)
+					op, previewErr := previewSingleFileInstall(prompt.Name, previewContent, sourcePath, projectDir, t.PromptDir(), t.PromptSuffix(), t, KindPrompt)
 					if previewErr != nil {
 						errMsg := fmt.Sprintf("dry-run preview prompt %s -> %s: %v", prompt.Name, t.Name(), previewErr)
 						res.Errors = append(res.Errors, errMsg)
