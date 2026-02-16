@@ -83,18 +83,8 @@ func defaultCachePath(name string) string {
 }
 
 // defaultGlobalManifestPath returns the path to the user-level global config.
-// Uses $XDG_CONFIG_HOME/positive-vibes/vibes.yaml, falling back to
-// ~/.config/positive-vibes/vibes.yaml.
 func defaultGlobalManifestPath() string {
-	configDir := os.Getenv("XDG_CONFIG_HOME")
-	if configDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			home = "."
-		}
-		configDir = filepath.Join(home, ".config")
-	}
-	return filepath.Join(configDir, "positive-vibes", "vibes.yaml")
+	return manifest.DefaultGlobalManifestPath()
 }
 
 // gitRegistriesFromManifest builds GitRegistry sources for each registry in the manifest.

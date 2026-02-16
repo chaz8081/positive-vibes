@@ -579,3 +579,33 @@ func ResolveManifestPaths(m *Manifest, baseDir string) {
 		}
 	}
 }
+
+// DefaultGlobalManifestPath returns the path to the user-level global config.
+// Uses $XDG_CONFIG_HOME/positive-vibes/vibes.yaml, falling back to
+// ~/.config/positive-vibes/vibes.yaml.
+func DefaultGlobalManifestPath() string {
+	configDir := os.Getenv("XDG_CONFIG_HOME")
+	if configDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+		configDir = filepath.Join(home, ".config")
+	}
+	return filepath.Join(configDir, "positive-vibes", "vibes.yaml")
+}
+
+// Dedup returns a new slice with duplicates and empty strings removed,
+// preserving original order.
+func Dedup(names []string) []string {
+	seen := make(map[string]bool, len(names))
+	result := make([]string, 0, len(names))
+	for _, n := range names {
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		result = append(result, n)
+	}
+	return result
+}

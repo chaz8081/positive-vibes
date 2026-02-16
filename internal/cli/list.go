@@ -39,7 +39,11 @@ Examples:
 
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
-		merged, _ := manifest.LoadMergedManifest(project, globalPath)
+		merged, err := manifest.LoadMergedManifest(project, globalPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return
+		}
 
 		switch resType {
 		case ResourceSkills:

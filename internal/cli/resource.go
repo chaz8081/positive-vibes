@@ -1677,15 +1677,7 @@ func makeValidArgsFunction(nameMode string) func(cmd *cobra.Command, args []stri
 	}
 }
 
-// dedup returns a new slice with duplicate strings removed, preserving order.
+// dedup returns a new slice with duplicate and empty strings removed, preserving order.
 func dedup(names []string) []string {
-	seen := make(map[string]bool, len(names))
-	result := make([]string, 0, len(names))
-	for _, n := range names {
-		if !seen[n] {
-			seen[n] = true
-			result = append(result, n)
-		}
-	}
-	return result
+	return manifest.Dedup(names)
 }

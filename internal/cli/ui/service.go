@@ -3,10 +3,10 @@ package ui
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
+
+	"github.com/chaz8081/positive-vibes/internal/manifest"
 )
 
 const (
@@ -160,7 +160,7 @@ func NewServiceWithBridge(projectDir string, bridge ResourceServiceBridge) (*Ser
 	if projectDir == "" {
 		projectDir = "."
 	}
-	globalPath := defaultGlobalManifestPath()
+	globalPath := manifest.DefaultGlobalManifestPath()
 
 	return newServiceWithDeps(serviceDeps{
 		listAvailable: func(kind string) ([]ResourceRow, error) {
@@ -229,28 +229,28 @@ func (s *Service) InstallResources(kind string, names []string) error {
 	if err := validateKind(kind); err != nil {
 		return err
 	}
-	return s.deps.install(kind, dedup(names))
+	return s.deps.install(kind, manifest.Dedup(names))
 }
 
 func (s *Service) RemoveResources(kind string, names []string) error {
 	if err := validateKind(kind); err != nil {
 		return err
 	}
-	return s.deps.remove(kind, dedup(names))
+	return s.deps.remove(kind, manifest.Dedup(names))
 }
 
 func (s *Service) InstallResourcesGlobal(kind string, names []string) error {
 	if err := validateKind(kind); err != nil {
 		return err
 	}
-	return s.deps.installGlobal(kind, dedup(names))
+	return s.deps.installGlobal(kind, manifest.Dedup(names))
 }
 
 func (s *Service) RemoveResourcesGlobal(kind string, names []string) error {
 	if err := validateKind(kind); err != nil {
 		return err
 	}
-	return s.deps.removeGlobal(kind, dedup(names))
+	return s.deps.removeGlobal(kind, manifest.Dedup(names))
 }
 
 func (s *Service) PromoteLocalRegistries() (RegistryPromotionResult, error) {
@@ -264,29 +264,4 @@ func validateKind(kind string) error {
 	default:
 		return fmt.Errorf("unknown resource type %q (valid: skills, agents, instructions, prompts, targets, registries)", kind)
 	}
-}
-
-func defaultGlobalManifestPath() string {
-	configDir := os.Getenv("XDG_CONFIG_HOME")
-	if configDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			home = "."
-		}
-		configDir = filepath.Join(home, ".config")
-	}
-	return filepath.Join(configDir, "positive-vibes", "vibes.yaml")
-}
-
-func dedup(names []string) []string {
-	seen := make(map[string]bool, len(names))
-	result := make([]string, 0, len(names))
-	for _, n := range names {
-		if n == "" || seen[n] {
-			continue
-		}
-		seen[n] = true
-		result = append(result, n)
-	}
-	return result
 }

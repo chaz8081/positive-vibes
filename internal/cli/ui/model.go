@@ -833,19 +833,6 @@ func (m *model) scrollPreviewToBottom() {
 	m.previewOffset = m.previewViewport.YOffset
 }
 
-func (m model) previewMaxOffset() int {
-	lines := m.previewViewport.TotalLineCount()
-	viewH := m.previewViewport.Height
-	if lines <= viewH {
-		return 0
-	}
-	return lines - viewH
-}
-
-func (m model) previewLineCount() int {
-	return m.previewViewport.TotalLineCount()
-}
-
 func (m model) previewViewportHeight() int {
 	terminalHeight := m.height
 	if terminalHeight <= 0 {
@@ -1186,14 +1173,4 @@ func (m model) activeKind() string {
 
 func (m model) railTabs() []string {
 	return []string{"skills", "instructions", "agents", "targets", "registries"}
-}
-
-func (m model) wrapRail(delta int) railTab {
-	tabCount := len(m.railTabs())
-	if tabCount == 0 {
-		return 0
-	}
-
-	next := (int(m.activeRail) + delta + tabCount) % tabCount
-	return railTab(next)
 }

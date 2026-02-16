@@ -11,6 +11,8 @@ import (
 )
 
 func (m model) View() string {
+	// Safe to call on value receiver: mutations stay local to this View() call
+	// and do not escape to bubbletea's stored model.
 	m.syncPreviewViewport()
 
 	width := m.width
@@ -360,13 +362,6 @@ func (m model) renderSearchModal(width int) string {
 		mutedStyle.Render("Search captures typing; q will not quit until you exit search."),
 	}
 	return helpStyle.Width(width).Render(strings.Join(text, "\n"))
-}
-
-func valueOrUnknown(v string) string {
-	if v == "" {
-		return "(unknown)"
-	}
-	return v
 }
 
 func (m model) browserWidths(totalWidth int) (list int, preview int) {

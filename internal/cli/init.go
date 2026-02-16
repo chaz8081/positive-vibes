@@ -327,18 +327,6 @@ func writeInitManifestContent(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
-func join(ss []string, sep string) string {
-	out := ""
-	for i, s := range ss {
-		if i > 0 {
-			out += sep
-			out += " "
-		}
-		out += s
-	}
-	return out
-}
-
 func init() {
 	rootCmd.AddCommand(initCmd)
 }

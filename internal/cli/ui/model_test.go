@@ -1536,3 +1536,26 @@ func updateWithKey(t *testing.T, m model, msg tea.KeyMsg) model {
 
 	return next
 }
+
+func TestView_PureFunction_NoSideEffects(t *testing.T) {
+	// View() uses a value receiver, so syncPreviewViewport() inside View()
+	// only modifies a local copy. The caller's model is never mutated.
+	// Consecutive calls must produce identical output.
+	m := newModel()
+	m.screen = screenBrowser
+	m.height = 20
+	m.width = 80
+	m.activeRail = railSkills
+
+	// Produce two consecutive View() outputs from the same model value.
+	out1 := m.View()
+	out2 := m.View()
+	if out1 != out2 {
+		t.Fatal("consecutive View() calls produced different output; View must be pure")
+	}
+
+	// After calling View(), the caller's model should be unchanged (value receiver).
+	if m.previewOffset != 0 {
+		t.Fatalf("View() mutated previewOffset from 0 to %d", m.previewOffset)
+	}
+}

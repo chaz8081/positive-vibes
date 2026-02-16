@@ -68,7 +68,11 @@ func installSkillsRun(names []string) {
 
 	// If no names provided, show interactive picker
 	if len(names) == 0 {
-		merged, _ := manifest.LoadMergedManifest(project, globalPath)
+		merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
+		if mergeErr != nil {
+			fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
+			return
+		}
 		available := collectAvailableSkills(merged)
 
 		// Filter out already-installed skills
@@ -134,7 +138,11 @@ func installPromptsRun(names []string) {
 	}
 
 	if len(names) == 0 {
-		merged, _ := manifest.LoadMergedManifest(project, globalPath)
+		merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
+		if mergeErr != nil {
+			fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
+			return
+		}
 		available := collectAvailablePrompts(merged)
 		var options []huh.Option[string]
 		for _, item := range available {
@@ -194,7 +202,11 @@ func installAgentsRun(names []string) {
 		existing[a.Name] = true
 	}
 
-	merged, _ := manifest.LoadMergedManifest(project, globalPath)
+	merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
+	if mergeErr != nil {
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
+		return
+	}
 	availableRefs := collectRegistryResourceItems(merged, ResourceAgents)
 	availableByName := make(map[string]registryResourceItem, len(availableRefs))
 	for _, ref := range availableRefs {
@@ -353,7 +365,11 @@ func installInstructionsRun(names []string) {
 		existing[inst.Name] = true
 	}
 
-	merged, _ := manifest.LoadMergedManifest(project, globalPath)
+	merged, mergeErr := manifest.LoadMergedManifest(project, globalPath)
+	if mergeErr != nil {
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", mergeErr)
+		return
+	}
 	availableRefs := collectRegistryResourceItems(merged, ResourceInstructions)
 	availableByName := make(map[string]registryResourceItem, len(availableRefs))
 	for _, ref := range availableRefs {

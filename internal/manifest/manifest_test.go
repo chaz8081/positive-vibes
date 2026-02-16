@@ -866,3 +866,20 @@ agents:
 	assert.Equal(t, "./agents/bot.md", m.Agents[1].Path)
 	assert.Empty(t, m.Agents[1].Registry)
 }
+
+func TestDedup_RemovesDuplicatesAndEmpty(t *testing.T) {
+	assert.Empty(t, Dedup(nil))
+	assert.Empty(t, Dedup([]string{}))
+	assert.Equal(t, []string{"a", "b", "c"}, Dedup([]string{"a", "b", "a", "c", "b"}))
+	assert.Equal(t, []string{"x"}, Dedup([]string{"x", "x", "x"}))
+	assert.Equal(t, []string{"c", "a", "b"}, Dedup([]string{"c", "a", "b", "a", "c"}))
+	// Empty strings are filtered out.
+	assert.Equal(t, []string{"a", "b"}, Dedup([]string{"", "a", "", "b", ""}))
+}
+
+func TestDefaultGlobalManifestPath_ReturnsNonEmpty(t *testing.T) {
+	p := DefaultGlobalManifestPath()
+	assert.NotEmpty(t, p)
+	assert.Contains(t, p, "positive-vibes")
+	assert.Contains(t, p, "vibes.yaml")
+}

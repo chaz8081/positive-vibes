@@ -839,7 +839,7 @@ effective configuration as YAML.
 
 Use --sources to annotate each value with [global], [local], or
 [local, overrides global] to show where each value comes from.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
 		colorEnabled := shouldUseColor(configColor)
@@ -856,14 +856,12 @@ Use --sources to annotate each value with [global], [local], or
 				local = p
 			}
 			if global == nil && local == nil {
-				fmt.Fprintf(os.Stderr, "No config found (checked %s and %s)\n", globalPath, project)
-				os.Exit(1)
+				return fmt.Errorf("no config found (checked %s and %s)", globalPath, project)
 			}
 
 			merged, err := manifest.LoadMergedManifest(project, globalPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("loading config: %w", err)
 			}
 			if configShowRelativePaths {
 				if note := relativePathsNoEffectNote(merged); note != "" {
@@ -879,11 +877,11 @@ Use --sources to annotate each value with [global], [local], or
 		} else {
 			merged, err := manifest.LoadMergedManifest(project, globalPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "No config found (checked %s and %s)\n", globalPath, project)
-				os.Exit(1)
+				return fmt.Errorf("no config found (checked %s and %s): %w", globalPath, project, err)
 			}
 			fmt.Print(renderMergedYAML(merged))
 		}
+		return nil
 	},
 }
 
@@ -902,15 +900,15 @@ var configPathsCmd = &cobra.Command{
 var configDiffCmd = &cobra.Command{
 	Use:   "diff",
 	Short: "Show global, local, and effective config differences",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
 		out, err := buildConfigDiffOutput(project, globalPath, configDiffJSON)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			os.Exit(1)
+			return err
 		}
 		fmt.Print(out)
+		return nil
 	},
 }
 
@@ -923,7 +921,7 @@ var configValidateCmd = &cobra.Command{
 - Resource references are resolvable (skills/instructions/agents/prompts)
 
 Exits with code 1 if any problems are found.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		project := ProjectDir()
 		globalPath := defaultGlobalManifestPath()
 		colorEnabled := shouldUseColor(configColor)
@@ -961,8 +959,7 @@ Exits with code 1 if any problems are found.`,
 		// Load merged manifest
 		merged, err := manifest.LoadMergedManifest(project, globalPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("loading config: %w", err)
 		}
 
 		var globalM, localM *manifest.Manifest
@@ -1046,8 +1043,9 @@ Exits with code 1 if any problems are found.`,
 			}
 		} else {
 			fmt.Fprintf(os.Stdout, "%d problem(s) found.\n", len(result.problems))
-			os.Exit(1)
+			return fmt.Errorf("%d problem(s) found", len(result.problems))
 		}
+		return nil
 	},
 }
 
