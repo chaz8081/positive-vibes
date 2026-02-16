@@ -10,6 +10,7 @@ import (
 
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
+	"github.com/chaz8081/positive-vibes/internal/term"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -54,7 +55,7 @@ func colorizeStatus(label string, kind statusKind, enabled bool) string {
 	case statusFail:
 		code = "31"
 	}
-	return "\x1b[" + code + "m" + label + "\x1b[0m"
+	return "\x1b[" + code + "m" + label + term.Reset()
 }
 
 func colorizeSourceAnnotations(s string, enabled bool) string {
@@ -62,9 +63,9 @@ func colorizeSourceAnnotations(s string, enabled bool) string {
 		return s
 	}
 	repl := strings.NewReplacer(
-		"# [global]", "\x1b[34m# [global]\x1b[0m",
-		"# [local]", "\x1b[32m# [local]\x1b[0m",
-		"# [local, overrides global]", "\x1b[33m# [local, overrides global]\x1b[0m",
+		"# [global]", term.Blue()+"# [global]"+term.Reset(),
+		"# [local]", term.Green()+"# [local]"+term.Reset(),
+		"# [local, overrides global]", term.Yellow()+"# [local, overrides global]"+term.Reset(),
 	)
 	return repl.Replace(s)
 }

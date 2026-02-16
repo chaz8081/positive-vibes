@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"strings"
+
+	"github.com/chaz8081/positive-vibes/internal/term"
 )
 
 // DryRunAction describes what would happen to a file during apply.
@@ -42,28 +44,18 @@ func (op DryRunOp) String() string {
 	}
 }
 
-// ANSI escape codes for colored terminal output.
-const (
-	ansiReset  = "\033[0m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
-	ansiRed    = "\033[31m"
-	ansiCyan   = "\033[36m"
-	ansiDim    = "\033[2m"
-)
-
 // ColoredString returns an ANSI-colored representation of the operation.
 func (op DryRunOp) ColoredString() string {
 	switch op.Action {
 	case DryRunCreate:
-		return fmt.Sprintf("%s[create]%s  %s", ansiGreen, ansiReset, op.RelPath)
+		return fmt.Sprintf("%s[create]%s  %s", term.Green(), term.Reset(), op.RelPath)
 	case DryRunUpdate:
-		return fmt.Sprintf("%s[update]%s  %s", ansiYellow, ansiReset, op.RelPath)
+		return fmt.Sprintf("%s[update]%s  %s", term.Yellow(), term.Reset(), op.RelPath)
 	case DryRunSkip:
 		if op.Reason != "" {
-			return fmt.Sprintf("%s[skip]    %s (%s)%s", ansiDim, op.RelPath, op.Reason, ansiReset)
+			return fmt.Sprintf("%s[skip]    %s (%s)%s", term.Dim(), op.RelPath, op.Reason, term.Reset())
 		}
-		return fmt.Sprintf("%s[skip]    %s%s", ansiDim, op.RelPath, ansiReset)
+		return fmt.Sprintf("%s[skip]    %s%s", term.Dim(), op.RelPath, term.Reset())
 	default:
 		return fmt.Sprintf("[%s]  %s", op.Action, op.RelPath)
 	}
@@ -114,13 +106,13 @@ func ColorDiff(diff string) string {
 	for _, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "--- "), strings.HasPrefix(line, "+++ "):
-			fmt.Fprintf(&buf, "%s%s%s\n", ansiCyan, line, ansiReset)
+			fmt.Fprintf(&buf, "%s%s%s\n", term.Cyan(), line, term.Reset())
 		case strings.HasPrefix(line, "@@"):
-			fmt.Fprintf(&buf, "%s%s%s\n", ansiCyan, line, ansiReset)
+			fmt.Fprintf(&buf, "%s%s%s\n", term.Cyan(), line, term.Reset())
 		case strings.HasPrefix(line, "+"):
-			fmt.Fprintf(&buf, "%s%s%s\n", ansiGreen, line, ansiReset)
+			fmt.Fprintf(&buf, "%s%s%s\n", term.Green(), line, term.Reset())
 		case strings.HasPrefix(line, "-"):
-			fmt.Fprintf(&buf, "%s%s%s\n", ansiRed, line, ansiReset)
+			fmt.Fprintf(&buf, "%s%s%s\n", term.Red(), line, term.Reset())
 		default:
 			fmt.Fprintf(&buf, "%s\n", line)
 		}

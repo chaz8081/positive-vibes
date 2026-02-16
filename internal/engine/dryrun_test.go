@@ -3,6 +3,8 @@ package engine
 import (
 	"strings"
 	"testing"
+
+	"github.com/chaz8081/positive-vibes/internal/term"
 )
 
 func TestDryRunOp_String_Create(t *testing.T) {
@@ -95,10 +97,10 @@ func TestColorDiff_HeaderLinesAreNotTreatedAsAddsOrDeletes(t *testing.T) {
 
 	colored := ColorDiff(diff)
 
-	if strings.Contains(colored, ansiRed+"--- a/file.txt") {
+	if strings.Contains(colored, term.Red()+"--- a/file.txt") {
 		t.Fatalf("expected header line not to be colored as deletion")
 	}
-	if strings.Contains(colored, ansiGreen+"+++ b/file.txt") {
+	if strings.Contains(colored, term.Green()+"+++ b/file.txt") {
 		t.Fatalf("expected header line not to be colored as addition")
 	}
 }
