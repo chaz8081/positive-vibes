@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/chaz8081/positive-vibes/internal/target"
+	"github.com/chaz8081/positive-vibes/pkg/schema"
 )
 
 func TestApplyManifest_DryRun_NoFilesCreated(t *testing.T) {
@@ -305,4 +307,78 @@ func TestApplyManifest_DryRun_InstructionApplyTo(t *testing.T) {
 	if res.DryRunOps[0].Target != "opencode" {
 		t.Fatalf("expected target opencode, got %s", res.DryRunOps[0].Target)
 	}
+}
+
+func TestApplyManifest_DryRun_RegistryDoesNotWriteTempFiles(t *testing.T) {
+	t.Parallel()
+
+	reg := &fakeResourceRegistry{
+		name: "test-reg",
+		data: map[string][]byte{
+			"instructions/hello.md": []byte("inst content\n"),
+			"agents/bot.md":         []byte("agent content\n"),
+			"prompts/prompt.md":     []byte("prompt content\n"),
+		},
+	}
+
+	dir := t.TempDir()
+	m := &manifest.Manifest{
+		Instructions: []manifest.InstructionRef{{
+			Name:     "hello",
+			Registry: "test-reg",
+			Path:     "hello.md",
+		}},
+		Agents: []manifest.AgentRef{{
+			Name:     "bot",
+			Registry: "test-reg",
+			Path:     "bot.md",
+		}},
+		Prompts: []manifest.PromptRef{{
+			Name:     "prompt",
+			Registry: "test-reg",
+			Path:     "prompt.md",
+		}},
+		Targets: []string{"opencode"},
+	}
+
+	a := NewApplier([]registry.SkillSource{reg})
+	res, err := a.ApplyManifest(m, dir, target.InstallOpts{DryRun: true})
+	if err != nil {
+		t.Fatalf("apply manifest: %v", err)
+	}
+
+	if len(res.Errors) > 0 {
+		t.Fatalf("expected no errors, got: %v", res.Errors)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read project dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no files in project dir, got %d entries", len(entries))
+	}
+}
+
+type fakeResourceRegistry struct {
+	name string
+	data map[string][]byte
+}
+
+func (f *fakeResourceRegistry) Name() string { return f.name }
+func (f *fakeResourceRegistry) Fetch(name string) (*schema.Skill, string, error) {
+	return nil, "", fmt.Errorf("skill not found: %s", name)
+}
+func (f *fakeResourceRegistry) List() ([]string, error) {
+	return nil, nil
+}
+func (f *fakeResourceRegistry) FetchResourceFile(category, name string) ([]byte, error) {
+	key := filepath.Join(category, name)
+	if data, ok := f.data[key]; ok {
+		return data, nil
+	}
+	return nil, fmt.Errorf("resource not found: %s/%s", category, name)
+}
+func (f *fakeResourceRegistry) ListResourceFiles(kind string) ([]string, error) {
+	return nil, nil
 }
