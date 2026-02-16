@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,9 +11,24 @@ import (
 	"github.com/chaz8081/positive-vibes/internal/manifest"
 	"github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/chaz8081/positive-vibes/internal/target"
+	"github.com/chaz8081/positive-vibes/pkg/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type namedSkillSourceStub struct {
+	name string
+}
+
+func (s namedSkillSourceStub) Name() string { return s.name }
+
+func (s namedSkillSourceStub) Fetch(_ string) (*schema.Skill, string, error) {
+	return nil, "", fmt.Errorf("not implemented")
+}
+
+func (s namedSkillSourceStub) List() ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 // setupTestGitRepoWithFiles creates a local git repo with arbitrary files committed.
 // files is a map of relative paths to content. Returns the path to the repo.
@@ -1266,4 +1282,23 @@ agents:
 	if kindMap["my-agent"] != KindAgent {
 		t.Fatalf("expected KindAgent for my-agent, got %q", kindMap["my-agent"])
 	}
+}
+
+func TestFindRegistryByName_FindsMatchingRegistry(t *testing.T) {
+	regs := []registry.SkillSource{
+		namedSkillSourceStub{name: "embedded"},
+		namedSkillSourceStub{name: "remote"},
+	}
+
+	r, err := findRegistryByName(regs, "remote")
+	require.NoError(t, err)
+	require.Equal(t, "remote", r.Name())
+}
+
+func TestFindRegistryByName_ReturnsErrorWhenMissing(t *testing.T) {
+	regs := []registry.SkillSource{namedSkillSourceStub{name: "embedded"}}
+
+	_, err := findRegistryByName(regs, "missing")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "registry \"missing\" not found")
 }
