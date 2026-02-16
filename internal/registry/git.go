@@ -44,6 +44,15 @@ func (r *GitRegistry) isPinned() bool {
 
 func (r *GitRegistry) Name() string { return r.RegistryName }
 
+// validateURL rejects URLs that could be interpreted as command-line flags
+// by git or other tools, preventing option injection attacks.
+func validateURL(url string) error {
+	if strings.HasPrefix(url, "-") {
+		return fmt.Errorf("unsafe git URL %q: must not start with '-'", url)
+	}
+	return nil
+}
+
 // authMethod returns the appropriate transport.AuthMethod for the URL.
 // For SSH URLs (git@... or ssh://...), it attempts to use the system SSH agent.
 // For HTTPS or local paths, no auth is needed.
@@ -63,9 +72,13 @@ func isSSHURL(url string) bool {
 }
 
 // ensureCache clones the repository into CachePath if it does not already exist.
-// If the clone fails but a cached copy already exists, it silently returns nil
-// so callers can continue with stale data.
+// If the clone fails but a cached copy already exists (with a valid .git directory),
+// it silently returns nil so callers can continue with stale data.
 func (r *GitRegistry) ensureCache() error {
+	if err := validateURL(r.URL); err != nil {
+		return err
+	}
+
 	if _, err := os.Stat(filepath.Join(r.CachePath, ".git")); err == nil {
 		// Cache already populated.
 		return nil
@@ -95,10 +108,8 @@ func (r *GitRegistry) ensureCache() error {
 			repo, err = git.PlainClone(r.CachePath, false, cloneOpts)
 		}
 		if err != nil {
-			// If we somehow have a partial cache, allow fallback.
-			if _, statErr := os.Stat(r.CachePath); statErr == nil {
-				return nil
-			}
+			// Clean up any partial clone artifacts.
+			_ = os.RemoveAll(r.CachePath)
 			if r.isPinned() && !isSHA(r.Ref) {
 				return fmt.Errorf("registry %q: ref %q not found as branch or tag in %s", r.RegistryName, r.Ref, r.URL)
 			}
@@ -115,9 +126,7 @@ func (r *GitRegistry) ensureCache() error {
 				Auth: r.authMethod(),
 			})
 			if err != nil {
-				if _, statErr := os.Stat(r.CachePath); statErr == nil {
-					return nil
-				}
+				_ = os.RemoveAll(r.CachePath)
 				return fmt.Errorf("git clone %s: %w", r.URL, err)
 			}
 		}

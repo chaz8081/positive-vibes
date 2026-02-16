@@ -952,3 +952,55 @@ func TestGitRegistry_Fetch_PinnedRef_FallsBackToCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "cached-skill", sk2.Name)
 }
+
+func TestGitRegistry_EnsureCache_RejectsPartialCacheWithoutGit(t *testing.T) {
+	// Create a cache directory that exists but has no .git directory.
+	// This simulates a partially failed clone. ensureCache should NOT
+	// silently accept it as valid.
+	cacheDir := t.TempDir()
+	cachePath := filepath.Join(cacheDir, "partial-reg")
+	require.NoError(t, os.MkdirAll(cachePath, 0o755))
+
+	// Write a dummy file to make it non-empty
+	require.NoError(t, os.WriteFile(filepath.Join(cachePath, "junk.txt"), []byte("partial"), 0o644))
+
+	reg := &GitRegistry{
+		RegistryName: "partial-reg",
+		URL:          "/nonexistent/repo",
+		CachePath:    cachePath,
+		SkillsPath:   ".",
+	}
+
+	// ensureCache should fail since there's no .git and the URL is invalid.
+	// It should NOT silently succeed because the directory exists.
+	_, _, err := reg.Fetch("any-skill")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "git clone")
+}
+
+func TestGitRegistry_RejectsUnsafeURL(t *testing.T) {
+	cacheDir := t.TempDir()
+
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{"dash prefix", "-oProxyCommand=evil"},
+		{"double dash", "--upload-pack=evil"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := &GitRegistry{
+				RegistryName: "unsafe-reg",
+				URL:          tc.url,
+				CachePath:    filepath.Join(cacheDir, tc.name),
+				SkillsPath:   ".",
+			}
+
+			_, _, err := reg.Fetch("any-skill")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsafe")
+		})
+	}
+}
