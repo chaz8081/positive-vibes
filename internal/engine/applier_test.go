@@ -313,13 +313,13 @@ skills:
 
 	// Verify specific op fields
 	for _, op := range res.Ops {
-		if op.SkillName == "" {
-			t.Fatalf("op has empty SkillName: %+v", op)
+		if op.ResourceName == "" {
+			t.Fatalf("op has empty ResourceName: %+v", op)
 		}
 		if op.Status == OpInstalled && op.TargetName == "" {
 			t.Fatalf("installed op has empty TargetName: %+v", op)
 		}
-		if op.Status == OpNotFound && op.SkillName != "does-not-exist" {
+		if op.Status == OpNotFound && op.ResourceName != "does-not-exist" {
 			t.Fatalf("not_found op for wrong skill: %+v", op)
 		}
 	}
@@ -773,7 +773,7 @@ agents:
 	// Verify we have correct skill names
 	names := map[string]bool{}
 	for _, op := range res.Ops {
-		names[op.SkillName] = true
+		names[op.ResourceName] = true
 	}
 	for _, want := range []string{"conventional-commits", "code-style", "my-agent"} {
 		if !names[want] {
@@ -894,7 +894,7 @@ agents:
 	// Verify ops tracking includes the agent with KindAgent
 	var foundAgent bool
 	for _, op := range res.Ops {
-		if op.SkillName == "code-reviewer" {
+		if op.ResourceName == "code-reviewer" {
 			foundAgent = true
 			if op.Kind != KindAgent {
 				t.Fatalf("expected op.Kind == KindAgent for code-reviewer, got %q", op.Kind)
@@ -1164,7 +1164,7 @@ agents:
 
 	var foundError bool
 	for _, op := range res.Ops {
-		if op.SkillName == "ghost" && op.Status == OpError {
+		if op.ResourceName == "ghost" && op.Status == OpError {
 			foundError = true
 		}
 	}
@@ -1254,7 +1254,7 @@ agents:
 	// Verify each op has the correct Kind
 	kindMap := map[string]ApplyOpKind{}
 	for _, op := range res.Ops {
-		kindMap[op.SkillName] = op.Kind
+		kindMap[op.ResourceName] = op.Kind
 	}
 
 	if kindMap["conventional-commits"] != KindSkill {

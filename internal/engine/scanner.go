@@ -2,6 +2,7 @@ package engine
 
 import (
 	"os"
+	"path/filepath"
 )
 
 // ScanResult describes a detected project type and recommendations.
@@ -20,22 +21,22 @@ func ScanProject(dir string) (*ScanResult, error) {
 	}
 
 	// check for go.mod
-	if _, err := os.Stat(dir + string(os.PathSeparator) + "go.mod"); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 		res.Language = "go"
 		return res, nil
 	}
 
-	if _, err := os.Stat(dir + string(os.PathSeparator) + "package.json"); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err == nil {
 		res.Language = "node"
 		return res, nil
 	}
 
-	if _, err := os.Stat(dir + string(os.PathSeparator) + "pyproject.toml"); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "pyproject.toml")); err == nil {
 		res.Language = "python"
 		return res, nil
 	}
 
-	if _, err := os.Stat(dir + string(os.PathSeparator) + "requirements.txt"); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "requirements.txt")); err == nil {
 		res.Language = "python"
 		return res, nil
 	}

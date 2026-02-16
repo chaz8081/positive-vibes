@@ -34,11 +34,11 @@ const (
 
 // ApplyOp records the result of installing one item to one target.
 type ApplyOp struct {
-	SkillName  string
-	TargetName string
-	Kind       ApplyOpKind
-	Status     ApplyOpStatus
-	Error      string
+	ResourceName string
+	TargetName   string
+	Kind         ApplyOpKind
+	Status       ApplyOpStatus
+	Error        string
 }
 
 // ApplyResult summarizes installation results.
@@ -87,7 +87,7 @@ func applyResource(ctx resourceContext, targets []target.Target, spec resourceSp
 		if fetchErr != nil {
 			errMsg := fmt.Sprintf("%s %s: fetch from registry: %v", spec.kindLabel, spec.name, fetchErr)
 			ctx.res.Errors = append(ctx.res.Errors, errMsg)
-			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, Kind: spec.kind, Status: OpError, Error: errMsg})
+			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{ResourceName: spec.name, Kind: spec.kind, Status: OpError, Error: errMsg})
 			return
 		}
 		if ctx.opts.DryRun {
@@ -97,7 +97,7 @@ func applyResource(ctx resourceContext, targets []target.Target, spec resourceSp
 			if tmpErr != nil {
 				errMsg := fmt.Sprintf("%s %s: create temp file: %v", spec.kindLabel, spec.name, tmpErr)
 				ctx.res.Errors = append(ctx.res.Errors, errMsg)
-				ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, Kind: spec.kind, Status: OpError, Error: errMsg})
+				ctx.res.Ops = append(ctx.res.Ops, ApplyOp{ResourceName: spec.name, Kind: spec.kind, Status: OpError, Error: errMsg})
 				return
 			}
 			tempFile = tmp
@@ -144,10 +144,10 @@ func applyResource(ctx resourceContext, targets []target.Target, spec resourceSp
 			}
 			errMsg := fmt.Sprintf("install %s %s -> %s: %v", spec.kindLabel, spec.name, t.Name(), err)
 			ctx.res.Errors = append(ctx.res.Errors, errMsg)
-			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, TargetName: t.Name(), Kind: spec.kind, Status: OpError, Error: errMsg})
+			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{ResourceName: spec.name, TargetName: t.Name(), Kind: spec.kind, Status: OpError, Error: errMsg})
 		} else {
 			ctx.res.Installed++
-			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{SkillName: spec.name, TargetName: t.Name(), Kind: spec.kind, Status: OpInstalled})
+			ctx.res.Ops = append(ctx.res.Ops, ApplyOp{ResourceName: spec.name, TargetName: t.Name(), Kind: spec.kind, Status: OpInstalled})
 		}
 	}
 
@@ -233,10 +233,10 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 			errMsg := localPathErr.Error()
 			res.Errors = append(res.Errors, errMsg)
 			res.Ops = append(res.Ops, ApplyOp{
-				SkillName: s.Name,
-				Kind:      KindSkill,
-				Status:    OpError,
-				Error:     errMsg,
+				ResourceName: s.Name,
+				Kind:         KindSkill,
+				Status:       OpError,
+				Error:        errMsg,
 			})
 			continue
 		}
@@ -257,10 +257,10 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		if sk == nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("skill not found: %s", s.Name))
 			res.Ops = append(res.Ops, ApplyOp{
-				SkillName: s.Name,
-				Kind:      KindSkill,
-				Status:    OpNotFound,
-				Error:     fmt.Sprintf("skill not found: %s", s.Name),
+				ResourceName: s.Name,
+				Kind:         KindSkill,
+				Status:       OpNotFound,
+				Error:        fmt.Sprintf("skill not found: %s", s.Name),
 			})
 			continue
 		}
@@ -281,10 +281,10 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				if !opts.Force {
 					res.Skipped++
 					res.Ops = append(res.Ops, ApplyOp{
-						SkillName:  sk.Name,
-						TargetName: t.Name(),
-						Kind:       KindSkill,
-						Status:     OpSkipped,
+						ResourceName: sk.Name,
+						TargetName:   t.Name(),
+						Kind:         KindSkill,
+						Status:       OpSkipped,
 					})
 					continue
 				}
@@ -293,19 +293,19 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 				errMsg := fmt.Sprintf("install %s -> %s: %v", sk.Name, t.Name(), err)
 				res.Errors = append(res.Errors, errMsg)
 				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  sk.Name,
-					TargetName: t.Name(),
-					Kind:       KindSkill,
-					Status:     OpError,
-					Error:      errMsg,
+					ResourceName: sk.Name,
+					TargetName:   t.Name(),
+					Kind:         KindSkill,
+					Status:       OpError,
+					Error:        errMsg,
 				})
 			} else {
 				res.Installed++
 				res.Ops = append(res.Ops, ApplyOp{
-					SkillName:  sk.Name,
-					TargetName: t.Name(),
-					Kind:       KindSkill,
-					Status:     OpInstalled,
+					ResourceName: sk.Name,
+					TargetName:   t.Name(),
+					Kind:         KindSkill,
+					Status:       OpInstalled,
 				})
 			}
 		}
@@ -411,11 +411,11 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 			postTargetError: func(spec resourceSpec, t target.Target, err error) *ApplyOp {
 				if errors.Is(err, target.ErrPromptInstallUnsupported) {
 					return &ApplyOp{
-						SkillName:  spec.name,
-						TargetName: t.Name(),
-						Kind:       KindPrompt,
-						Status:     OpSkipped,
-						Error:      err.Error(),
+						ResourceName: spec.name,
+						TargetName:   t.Name(),
+						Kind:         KindPrompt,
+						Status:       OpSkipped,
+						Error:        err.Error(),
 					}
 				}
 				return nil

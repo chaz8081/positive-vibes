@@ -9,7 +9,6 @@ import (
 
 	"github.com/chaz8081/positive-vibes/internal/engine"
 	"github.com/chaz8081/positive-vibes/internal/manifest"
-	_ "github.com/chaz8081/positive-vibes/internal/registry"
 	"github.com/spf13/cobra"
 )
 

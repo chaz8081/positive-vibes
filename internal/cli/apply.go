@@ -170,13 +170,13 @@ var applyCmd = &cobra.Command{
 			}
 			switch op.Status {
 			case engine.OpInstalled:
-				fmt.Printf("  installed %s: %s -> %s\n", kind, op.SkillName, op.TargetName)
+				fmt.Printf("  installed %s: %s -> %s\n", kind, op.ResourceName, op.TargetName)
 			case engine.OpSkipped:
-				fmt.Printf("  skipped %s:   %s -> %s (already exists)\n", kind, op.SkillName, op.TargetName)
+				fmt.Printf("  skipped %s:   %s -> %s (already exists)\n", kind, op.ResourceName, op.TargetName)
 			case engine.OpNotFound:
-				fmt.Printf("  not found %s: %s\n", kind, op.SkillName)
+				fmt.Printf("  not found %s: %s\n", kind, op.ResourceName)
 			case engine.OpError:
-				fmt.Printf("  error %s:     %s -> %s: %s\n", kind, op.SkillName, op.TargetName, op.Error)
+				fmt.Printf("  error %s:     %s -> %s: %s\n", kind, op.ResourceName, op.TargetName, op.Error)
 			}
 		}
 
