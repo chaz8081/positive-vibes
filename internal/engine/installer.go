@@ -68,7 +68,11 @@ func (i *Installer) Install(skillName string, manifestPath string) error {
 	// fall back to registries
 	found := false
 	for _, r := range i.Registries {
-		if _, _, err := r.Fetch(skillName); err == nil {
+		_, _, cleanup, err := fetchWithCleanup(r, skillName)
+		if cleanup != nil {
+			cleanup()
+		}
+		if err == nil {
 			found = true
 			break
 		}

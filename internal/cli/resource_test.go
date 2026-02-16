@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,34 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type cliCleanupTrackingSource struct {
+	name                 string
+	fetchWithCleanupUsed bool
+	cleanupCalled        bool
+	skillName            string
+}
+
+func (s *cliCleanupTrackingSource) Name() string { return s.name }
+
+func (s *cliCleanupTrackingSource) Fetch(name string) (*schema.Skill, string, error) {
+	return nil, "", fmt.Errorf("unexpected Fetch call for %s", name)
+}
+
+func (s *cliCleanupTrackingSource) List() ([]string, error) {
+	return []string{s.skillName}, nil
+}
+
+func (s *cliCleanupTrackingSource) FetchWithCleanup(name string) (*schema.Skill, string, func(), error) {
+	s.fetchWithCleanupUsed = true
+	cleanup := func() {
+		s.cleanupCalled = true
+	}
+	if name != s.skillName {
+		return nil, "", cleanup, fmt.Errorf("skill not found: %s", name)
+	}
+	return &schema.Skill{Name: name}, "", cleanup, nil
+}
 
 // --- ParseResourceType tests ---
 
@@ -310,6 +339,20 @@ func TestResolveSkillFromSources_NotFound(t *testing.T) {
 	_, _, err := resolveSkillFromSources("no-such-skill-xyz", sources)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestResolveSkillFromSources_UsesFetchWithCleanup(t *testing.T) {
+	src := &cliCleanupTrackingSource{
+		name:      "test-cleanable",
+		skillName: "cleanup-skill",
+	}
+
+	skill, regName, err := resolveSkillFromSources("cleanup-skill", []registry.SkillSource{src})
+	require.NoError(t, err)
+	require.Equal(t, "cleanup-skill", skill.Name)
+	require.Equal(t, "test-cleanable", regName)
+	require.True(t, src.fetchWithCleanupUsed, "expected FetchWithCleanup to be used")
+	require.True(t, src.cleanupCalled, "expected cleanup to be called")
 }
 
 // --- formatResourceList tests ---
