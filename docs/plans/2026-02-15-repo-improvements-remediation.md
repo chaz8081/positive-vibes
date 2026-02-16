@@ -1,6 +1,6 @@
 # Repository Improvements Remediation Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: IN PROGRESS** -- Tasks 1-7 complete; Tasks 8-9 remaining.
 
 **Goal:** Resolve repo audit findings end-to-end, prioritizing security/correctness, then CI/testability, then cleanup and docs hygiene.
 

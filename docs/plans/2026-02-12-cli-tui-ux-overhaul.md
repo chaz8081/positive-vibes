@@ -1,6 +1,6 @@
 # CLI TUI UX Overhaul Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: COMPLETED** -- Implemented in `feature/tui-ux-overhaul` and merged to `main`.
 
 **Goal:** Add a keyboard-first full-screen TUI that launches on no-args (TTY only) and supports install/remove/show flows for skills, instructions, and agents with modal overlays.
 

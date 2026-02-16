@@ -12,6 +12,11 @@ Every AI coding tool has its own way of configuring resources like skills and in
 
 positive-vibes gives you one `vibes.yaml` to define your resources, then syncs them everywhere.
 
+## Prerequisites
+
+- **Go 1.24+** -- required to build and install
+- **git** -- required for registry cloning and cache management
+
 ## Quick Start
 
 ### Install

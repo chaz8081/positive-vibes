@@ -1,6 +1,6 @@
 # Prompts Resource Type Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: COMPLETED** -- Implemented in `feature/tui-ux-overhaul` and merged to `main`.
 
 **Goal:** Add a first-class `prompts` resource type that is file-based, works in CLI/TUI/list/show/install/remove/apply flows, installs to Copilot and OpenCode target locations, and skips Cursor with warning.
 

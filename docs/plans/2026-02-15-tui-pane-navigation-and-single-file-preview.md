@@ -1,6 +1,6 @@
 # TUI Pane Navigation and Single-File Preview Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: COMPLETED** -- Implemented in `feature/tui-ux-overhaul` and merged to `main`.
 
 **Goal:** Align browser navigation to Vim/arrow expectations (`h/j/k/l` and arrow equivalents), keep single-file resource previews inline, and remove unnecessary drill-in for instructions/prompts/agents.
 

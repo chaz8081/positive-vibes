@@ -1,6 +1,6 @@
 # TUI Registries + Targets UX Improvement Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: COMPLETED** -- Implemented in `feature/tui-ux-overhaul` and merged to `main`.
 
 **Goal:** Make registries and targets management in the TUI intuitive, safe, and portable, with global-first registry management, local override awareness, and guided remediation for invalid/conflicting local registry states.
 
