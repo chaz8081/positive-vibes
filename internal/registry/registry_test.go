@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,6 +98,44 @@ func TestGitRegistry_List_InvalidURL(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error from invalid git URL")
 	}
+}
+
+func TestEmbeddedRegistry_Fetch_TempDirCleanup(t *testing.T) {
+	r := NewEmbeddedRegistry()
+	sk, srcDir, cleanup, err := r.FetchWithCleanup("conventional-commits")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sk == nil || sk.Name != "conventional-commits" {
+		t.Fatalf("expected valid skill, got %v", sk)
+	}
+	if srcDir == "" {
+		t.Fatalf("expected non-empty srcDir")
+	}
+
+	// srcDir should exist before cleanup
+	if _, err := os.Stat(srcDir); err != nil {
+		t.Fatalf("srcDir should exist before cleanup: %v", err)
+	}
+
+	// Call cleanup -- temp dir should be removed
+	cleanup()
+
+	if _, err := os.Stat(srcDir); !os.IsNotExist(err) {
+		t.Fatalf("srcDir should be removed after cleanup, got err: %v", err)
+	}
+}
+
+func TestEmbeddedRegistry_Fetch_CleanupIsIdempotent(t *testing.T) {
+	r := NewEmbeddedRegistry()
+	_, _, cleanup, err := r.FetchWithCleanup("conventional-commits")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Calling cleanup multiple times should not panic
+	cleanup()
+	cleanup()
 }
 
 // helpers

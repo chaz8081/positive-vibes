@@ -29,35 +29,52 @@ func NewEmbeddedRegistry() *EmbeddedRegistry {
 func (e *EmbeddedRegistry) Name() string { return e.RegistryName }
 
 // Fetch reads the SKILL.md from the embedded FS, parses it and writes it to a temp dir.
+// DEPRECATED: Use FetchWithCleanup instead to ensure temp directories are cleaned up.
 func (e *EmbeddedRegistry) Fetch(name string) (*schema.Skill, string, error) {
+	sk, srcDir, _, err := e.FetchWithCleanup(name)
+	return sk, srcDir, err
+}
+
+// FetchWithCleanup reads the SKILL.md from the embedded FS, parses it, writes
+// it to a temp dir, and returns a cleanup function that removes the temp dir.
+// Callers MUST call the cleanup function when they are done with srcDir.
+func (e *EmbeddedRegistry) FetchWithCleanup(name string) (*schema.Skill, string, func(), error) {
+	noop := func() {}
+
 	rel := filepath.Join(name, "SKILL.md")
 	b, err := e.FS.ReadFile(rel)
 	if err != nil {
-		return nil, "", fmt.Errorf("skill %s not found: %w", name, err)
+		return nil, "", noop, fmt.Errorf("skill %s not found: %w", name, err)
 	}
 
 	sk, err := schema.ParseSkillFile(b)
 	if err != nil {
-		return nil, "", err
+		return nil, "", noop, err
 	}
 
 	// write to temp dir
 	tmp, err := os.MkdirTemp("", "pv-skill-")
 	if err != nil {
-		return nil, "", err
+		return nil, "", noop, err
 	}
 
 	// create dir for skill
 	skillDir := filepath.Join(tmp, name)
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		return nil, "", err
+		os.RemoveAll(tmp)
+		return nil, "", noop, err
 	}
 
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), b, 0o644); err != nil {
-		return nil, "", err
+		os.RemoveAll(tmp)
+		return nil, "", noop, err
 	}
 
-	return sk, skillDir, nil
+	cleanup := func() {
+		os.RemoveAll(tmp)
+	}
+
+	return sk, skillDir, cleanup, nil
 }
 
 // List returns all skill names embedded.

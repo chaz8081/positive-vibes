@@ -13,6 +13,19 @@ type SkillSource interface {
 	List() ([]string, error)
 }
 
+// CleanableFetcher extends SkillSource with a Fetch variant that returns a
+// cleanup function. Callers should invoke cleanup after they are done with
+// the returned srcDir. For sources backed by temp directories (e.g.
+// EmbeddedRegistry), cleanup removes the temp directory. For sources backed
+// by persistent caches (e.g. GitRegistry), cleanup is a no-op.
+type CleanableFetcher interface {
+	SkillSource
+	// FetchWithCleanup is like Fetch but returns an additional cleanup func.
+	// The caller MUST call cleanup when done with srcDir. Cleanup is
+	// idempotent and safe to call multiple times.
+	FetchWithCleanup(name string) (*schema.Skill, string, func(), error)
+}
+
 // FileSource extends SkillSource with raw file access into skill directories.
 // Registries that support fetching arbitrary files (e.g., agent definitions)
 // should implement this interface.

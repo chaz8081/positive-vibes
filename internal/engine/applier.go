@@ -89,16 +89,18 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		var sk *schema.Skill
 		var srcDir string
 		var localPathErr error
+		var cleanupFn func()
 
 		if s.Registry != "" {
 			skillPath := s.Path
 			if skillPath == "" {
 				skillPath = s.Name
 			}
-			got, dir, err := a.fetchSkillFromRegistry(s.Registry, skillPath)
+			got, dir, cleanup, err := a.fetchSkillFromRegistryWithCleanup(s.Registry, skillPath)
 			if err == nil {
 				sk = got
 				srcDir = dir
+				cleanupFn = cleanup
 			}
 		} else if s.Path != "" {
 			// local override path -- resolve relative to project directory
@@ -135,10 +137,11 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 		// if not local, search registries
 		if sk == nil {
 			for _, r := range a.Registries {
-				got, dir, err := r.Fetch(s.Name)
+				got, dir, cleanup, err := fetchWithCleanup(r, s.Name)
 				if err == nil {
 					sk = got
 					srcDir = dir
+					cleanupFn = cleanup
 					break
 				}
 			}
@@ -188,6 +191,11 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 					Status:     OpInstalled,
 				})
 			}
+		}
+
+		// Clean up temp source directory (e.g. from embedded registry)
+		if cleanupFn != nil {
+			cleanupFn()
 		}
 	}
 
@@ -412,6 +420,28 @@ func (a *Applier) fetchSkillFromRegistry(regName, skillName string) (*schema.Ski
 		return r.Fetch(skillName)
 	}
 	return nil, "", fmt.Errorf("registry %q not found", regName)
+}
+
+// fetchSkillFromRegistryWithCleanup is like fetchSkillFromRegistry but returns
+// a cleanup function when the underlying registry supports CleanableFetcher.
+func (a *Applier) fetchSkillFromRegistryWithCleanup(regName, skillName string) (*schema.Skill, string, func(), error) {
+	for _, r := range a.Registries {
+		if r.Name() != regName {
+			continue
+		}
+		return fetchWithCleanup(r, skillName)
+	}
+	return nil, "", nil, fmt.Errorf("registry %q not found", regName)
+}
+
+// fetchWithCleanup fetches a skill from a source, returning a cleanup function
+// if the source implements CleanableFetcher. For sources that don't, cleanup is nil.
+func fetchWithCleanup(src registry.SkillSource, name string) (*schema.Skill, string, func(), error) {
+	if cf, ok := src.(registry.CleanableFetcher); ok {
+		return cf.FetchWithCleanup(name)
+	}
+	sk, dir, err := src.Fetch(name)
+	return sk, dir, nil, err
 }
 
 // fetchResourceFileFromRegistry looks up a registry by name, asserts it
