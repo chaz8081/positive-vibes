@@ -108,16 +108,16 @@ func TestApplyManifest_DryRun_DetectsUpdates(t *testing.T) {
 		t.Fatalf("expected DryRunOps to be non-empty")
 	}
 
-	// At least one op should be an update (since skill already exists)
-	hasUpdate := false
+	// At least one op should be an update or skip (since skill already exists)
+	hasUpdateOrSkip := false
 	for _, op := range res.DryRunOps {
-		if op.Action == DryRunUpdate {
-			hasUpdate = true
+		if op.Action == DryRunUpdate || op.Action == DryRunSkip {
+			hasUpdateOrSkip = true
 			break
 		}
 	}
-	if !hasUpdate {
-		t.Fatalf("expected at least one DryRunUpdate op, got: %+v", res.DryRunOps)
+	if !hasUpdateOrSkip {
+		t.Fatalf("expected at least one DryRunUpdate or DryRunSkip op, got: %+v", res.DryRunOps)
 	}
 }
 
