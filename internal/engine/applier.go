@@ -389,13 +389,13 @@ func (a *Applier) ApplyManifest(m *manifest.Manifest, projectDir string, opts ta
 
 		for _, t := range targets {
 			if opts.DryRun {
-				// Probe for unsupported targets by calling InstallPrompt with empty args.
-				// Cursor returns ErrPromptInstallUnsupported immediately regardless of args.
-				probeErr := t.InstallPrompt("", "", projectDir, target.InstallOpts{})
-				if errors.Is(probeErr, target.ErrPromptInstallUnsupported) {
+				// Check if target supports prompts without invoking install
+				// (which could create directories as a side effect).
+				if !t.SupportsPrompts() {
+					promptRelPath := filepath.Join(t.PromptDir(), prompt.Name+t.PromptSuffix())
 					res.DryRunOps = append(res.DryRunOps, DryRunOp{
 						Action:   DryRunSkip,
-						RelPath:  prompt.Name,
+						RelPath:  promptRelPath,
 						Target:   t.Name(),
 						Kind:     KindPrompt,
 						Resource: prompt.Name,

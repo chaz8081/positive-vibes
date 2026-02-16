@@ -47,6 +47,8 @@ type Target interface {
 	InstallPrompt(name string, sourcePath string, projectRoot string, opts InstallOpts) error
 	// PromptSuffix returns the file extension used for prompt files (e.g. ".prompt.md").
 	PromptSuffix() string
+	// SupportsPrompts reports whether this target supports prompt installation.
+	SupportsPrompts() bool
 }
 
 // ResolveTargets maps target name strings to Target implementations.

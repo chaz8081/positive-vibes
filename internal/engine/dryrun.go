@@ -25,12 +25,6 @@ type DryRunOp struct {
 	Reason   string      // reason (for skips)
 }
 
-// DryRunResult collects all operations from a dry-run.
-type DryRunResult struct {
-	Ops    []DryRunOp
-	Errors []string
-}
-
 // String returns a plain-text representation of the operation.
 func (op DryRunOp) String() string {
 	switch op.Action {

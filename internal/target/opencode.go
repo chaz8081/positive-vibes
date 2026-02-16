@@ -15,6 +15,7 @@ func (OpenCodeTarget) InstructionDir() string { return filepath.Join(".opencode"
 func (OpenCodeTarget) AgentDir() string       { return filepath.Join(".opencode", "agents") }
 func (OpenCodeTarget) PromptDir() string      { return filepath.Join(".opencode", "commands") }
 func (OpenCodeTarget) PromptSuffix() string   { return ".md" }
+func (OpenCodeTarget) SupportsPrompts() bool  { return true }
 
 func (t OpenCodeTarget) Install(skill *schema.Skill, sourceDir string, projectRoot string, opts InstallOpts) error {
 	return installGeneric(skill, sourceDir, projectRoot, t.SkillDir(), opts)

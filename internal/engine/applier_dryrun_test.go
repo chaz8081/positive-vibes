@@ -13,12 +13,33 @@ import (
 func TestApplyManifest_DryRun_NoFilesCreated(t *testing.T) {
 	tmp := t.TempDir()
 
+	// Create local source files for agent and prompt
+	agentSrc := filepath.Join(tmp, "sources", "my-agent.md")
+	promptSrc := filepath.Join(tmp, "sources", "my-prompt.md")
+	if err := os.MkdirAll(filepath.Dir(agentSrc), 0o755); err != nil {
+		t.Fatalf("mkdir sources: %v", err)
+	}
+	if err := os.WriteFile(agentSrc, []byte("# Agent\nDo things."), 0o644); err != nil {
+		t.Fatalf("write agent: %v", err)
+	}
+	if err := os.WriteFile(promptSrc, []byte("---\ndescription: Prompt\n---\nDo stuff."), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+
 	m := &manifest.Manifest{
-		Targets: []string{"opencode"},
+		Targets: []string{"opencode", "cursor", "vscode-copilot"},
 		Skills:  []manifest.SkillRef{{Name: "conventional-commits"}},
 		Instructions: []manifest.InstructionRef{{
 			Name:    "test-inst",
 			Content: "Some inline instruction content.",
+		}},
+		Agents: []manifest.AgentRef{{
+			Name: "my-agent",
+			Path: "./sources/my-agent.md",
+		}},
+		Prompts: []manifest.PromptRef{{
+			Name: "my-prompt",
+			Path: "./sources/my-prompt.md",
 		}},
 	}
 
@@ -39,15 +60,16 @@ func TestApplyManifest_DryRun_NoFilesCreated(t *testing.T) {
 		t.Fatalf("expected Installed == 0 in dry-run, got %d", res.Installed)
 	}
 
-	// No files should have been created on disk
-	skillsDir := filepath.Join(tmp, ".opencode", "skills")
-	if _, err := os.Stat(skillsDir); !os.IsNotExist(err) {
-		t.Fatalf("expected no skills directory to exist, but it does (or other error): %v", err)
-	}
-
-	instDir := filepath.Join(tmp, ".opencode", "instructions")
-	if _, err := os.Stat(instDir); !os.IsNotExist(err) {
-		t.Fatalf("expected no instructions directory to exist, but it does (or other error): %v", err)
+	// No files or directories should have been created on disk for any target.
+	// Check all target root directories.
+	for _, dir := range []string{
+		filepath.Join(tmp, ".opencode"),
+		filepath.Join(tmp, ".cursor"),
+		filepath.Join(tmp, ".github"),
+	} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("dry-run created directory %s (should not exist)", dir)
+		}
 	}
 }
 
@@ -151,5 +173,27 @@ func TestApplyManifest_DryRun_PromptsSkipCursor(t *testing.T) {
 	// Installed counter should be 0 in dry-run
 	if res.Installed != 0 {
 		t.Fatalf("expected Installed == 0 in dry-run, got %d", res.Installed)
+	}
+
+	// Verify RelPath for cursor skip op is a proper relative path, not just the prompt name
+	for _, op := range res.DryRunOps {
+		if op.Action == DryRunSkip && op.Kind == KindPrompt && op.Target == "cursor" {
+			expected := filepath.Join(".cursor", "prompts", "my-prompt.md")
+			if op.RelPath != expected {
+				t.Fatalf("expected skip op RelPath=%q, got %q", expected, op.RelPath)
+			}
+			break
+		}
+	}
+
+	// CRITICAL: dry-run must not create any directories as side effect.
+	// The old probe-call approach caused os.MkdirAll to create prompt dirs.
+	cursorPromptDir := filepath.Join(tmp, ".cursor", "prompts")
+	if _, err := os.Stat(cursorPromptDir); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created cursor prompts directory: %s (should not exist)", cursorPromptDir)
+	}
+	opencodeCommandsDir := filepath.Join(tmp, ".opencode", "commands")
+	if _, err := os.Stat(opencodeCommandsDir); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created opencode commands directory: %s (should not exist)", opencodeCommandsDir)
 	}
 }
