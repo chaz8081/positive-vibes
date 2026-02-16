@@ -13,8 +13,9 @@ import (
 
 // InstallOpts controls how skills are installed.
 type InstallOpts struct {
-	Force bool // overwrite existing skills
-	Link  bool // create symlinks instead of copies
+	Force  bool // overwrite existing skills
+	Link   bool // create symlinks instead of copies
+	DryRun bool // preview changes without writing
 }
 
 // ErrPromptInstallUnsupported indicates the target does not support prompts.
