@@ -79,3 +79,26 @@ func TestFormatDryRunSummary_Empty(t *testing.T) {
 		t.Fatalf("expected 'Nothing to apply', got: %s", s)
 	}
 }
+
+func TestColorDiff_HeaderLinesAreNotTreatedAsAddsOrDeletes(t *testing.T) {
+	t.Parallel()
+
+	diff := strings.Join([]string{
+		"--- a/file.txt",
+		"+++ b/file.txt",
+		"@@ -1,1 +1,1 @@",
+		"-old",
+		"+new",
+		" context",
+		"",
+	}, "\n")
+
+	colored := ColorDiff(diff)
+
+	if strings.Contains(colored, ansiRed+"--- a/file.txt") {
+		t.Fatalf("expected header line not to be colored as deletion")
+	}
+	if strings.Contains(colored, ansiGreen+"+++ b/file.txt") {
+		t.Fatalf("expected header line not to be colored as addition")
+	}
+}

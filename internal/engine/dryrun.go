@@ -113,6 +113,8 @@ func ColorDiff(diff string) string {
 	var buf strings.Builder
 	for _, line := range lines {
 		switch {
+		case strings.HasPrefix(line, "--- "), strings.HasPrefix(line, "+++ "):
+			fmt.Fprintf(&buf, "%s%s%s\n", ansiCyan, line, ansiReset)
 		case strings.HasPrefix(line, "@@"):
 			fmt.Fprintf(&buf, "%s%s%s\n", ansiCyan, line, ansiReset)
 		case strings.HasPrefix(line, "+"):
